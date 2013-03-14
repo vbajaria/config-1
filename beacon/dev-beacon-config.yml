@@ -1,0 +1,63 @@
+hbase:
+    zookeeper:
+        hosts:
+            - localhost
+        port: 2181
+        connectionTimeout: 10s
+        sessionTimeout: 10s
+        namespace: "/hbase"
+    flushInterval: 6s
+    incrementBufferSize: 256KB
+    maxConcurrentRequests: 1000
+    connectionTimeout: 10s
+    instrumented: no
+
+http:
+    port: 9080
+    adminPort: 9081
+    connectorType: nonblocking
+    requestLog:
+        console:
+            enabled: false
+        file:
+            enabled: true
+            currentLogFilename: /var/log/beacon
+            archive: true
+            archivedLogFilenamePattern: /var/log/beacon/app-%d.log.gz
+            archivedFileCount: 5
+
+mysql:
+    driverClass: com.mysql.jdbc.Driver
+    user: ntropy
+    password: 2bc869f70e28759f57561b5303f4883c
+    url: jdbc:mysql://54.235.120.143/ntropy
+    maxWaitForConnection: 1s
+    validationQuery: "/* MyService Health Check */ SELECT distinct 1 FROM metadata_organization"
+    minSize: 8
+    maxSize: 32
+    checkConnectionWhileIdle: false
+    checkConnectionHealthWhenIdleFor: 10s
+    closeConnectionIfIdleFor: 1 minute
+
+kafka:
+    zookeeper:
+        hosts:
+            - localhost
+        port: 2181
+        connectionTimeout: 10s
+        sessionTimeout: 10s
+        namespace: "/"
+    sendBufferSize: 10KB
+    connectionTimeout: 5000s
+    reconnectInterval: 30000
+    maxMessageSize: 1MB
+    compression: none
+    partitionMissRetries: 3
+    async:
+        queueTime: 5s
+        queueSize: 10000
+        batchSize: 2000
+    serializerClass: kafka.serializer.StringEncoder
+
+authenticationCachePolicy: maximumSize=10000, expireAfterAccess=10m
+

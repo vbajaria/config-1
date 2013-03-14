@@ -1,0 +1,2 @@
+export ZOOKEEPER_HOME=/usr/lib/zookeeper
+export PATH=$PATH:$ZOOKEEPER_HOME/bin

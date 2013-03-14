@@ -1,0 +1,2 @@
+export STORM_HOME=/usr/lib/storm
+export PATH=$PATH:$STORM_HOME/bin

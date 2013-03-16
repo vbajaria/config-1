@@ -1,0 +1,8 @@
+check process zookeeper with pidfile /mnt/data/zookeeper/zookeeper_server.pid
+    start program = "/usr/lib/zookeeper/bin/zkServer.sh start" with timeout 30 seconds
+    stop program = "/usr/lib/zookeeper/bin/zkServer.sh stop"
+    if failed host localhost port 2181 protocol tcp then restart
+    if cpu usage is greater than 60 percent for 2 cycles then alert
+    if 5 restarts within 5 cycles then timeout
+    alert alerts@grepdata.com
+

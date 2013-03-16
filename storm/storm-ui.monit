@@ -1,0 +1,6 @@
+check process ui with pidfile /var/service/pids/ui.pid
+    start program = "/etc/init.d/storm ui start"
+    stop program = "/etc/init.d/storm ui stop"
+    if 5 restarts within 5 cycles then timeout
+    alert premal@grepdata.com
+

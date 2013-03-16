@@ -1,0 +1,6 @@
+check process supervisor with pidfile /var/service/pids/supervisor.pid
+    start program = "/etc/init.d/storm supervisor start"
+    stop program = "/etc/init.d/storm supervisor stop"
+    if 5 restarts within 5 cycles then timeout
+    alert premal@grepdata.com
+

@@ -1,0 +1,1588 @@
+import boto, os, aws, time, re, socket
+from fabric.api import *
+from fabric.context_managers import *
+
+HOME = os.getenv('HOME')
+env.user = 'ubuntu'
+env.key_filename = ['%s/.ssh/Ntropy1.pem' %HOME]
+
+#################################################################################
+# PUSH DATA
+#################################################################################
+def install_push_script():
+    put('/home/premal/push_test_data.py', '/home/ubuntu/')
+
+def run_push_script(endpoint, token, t=None):
+    if t:
+        run('nohup sh -c "python push_test_data.py %s %s %s &"' %(endpoint, token, t))
+    else:
+        run('nohup sh -c "python push_test_data.py %s %s &"' %(endpoint, token))
+
+def kill_push_script():
+    sudo('pkill -f push_test_data.py')
+
+#################################################################################
+# APT-GET
+#################################################################################
+def apt_get_update():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        print 'Updating apt repo'
+        run('sudo apt-get update')
+
+def install_apt_sources():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        print 'Installing required apt-get sources'
+        sudo('wget https://raw.github.com/premal/config/master/apt/mkpasswd.sources.list -O /etc/apt/sources.list.d/mkpasswd.sources.list')
+
+def install_basic_software():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        install_apt_sources()
+        apt_get_update()
+
+        print 'Installing htop iotop sysstat git mkpasswd ntp locate liblzo2-dev'
+        run('sudo apt-get -y install htop iotop sysstat git mkpasswd ntp locate liblzo2-dev')
+
+        print 'Installing monit'
+        install_monit()
+
+        install_ganglia_slave()
+
+        #print 'Installing git access key'        
+        #install_git_access()
+
+        print 'Installing ssh config'
+        install_ssh_config()
+
+#################################################################################
+# ETC HOSTS
+#################################################################################
+def install_etc_hosts(org="ntropy"):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l etc_hosts')
+
+    if result.failed:
+        print 'Downloading hosts file'
+        result = run('wget https://raw.github.com/premal/config/master/etc_hosts -O etc_hosts')
+
+    etc_hosts = []
+    for instance in aws.get_instances(org=org, state='running'):
+        etc_hosts.append(('%s\t%s %s' %(instance.private_ip_address, instance.public_dns_name, instance.private_dns_name)))
+
+    code_lines = ["f = open('etc_hosts').read()" ,
+                  "out = f.replace('REPLACE_WITH_HOSTS', '''%s''')" %'\n'.join(etc_hosts),
+                  "f = open('/etc/hosts', 'w')",
+                  "f.write(out)",
+                  "f.close()"]
+
+    print 'Updating /etc/hosts'
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('python -c "%s"' %'; '.join(code_lines))
+
+#################################################################################
+# SERVICE CONFIG
+#################################################################################
+def install_service_config():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /etc/init.d/service_config.sh')
+
+    if result.failed:
+        print 'Downloading service management file.'
+        sudo('wget https://raw.github.com/premal/config/master/service_config.sh -O /etc/init.d/service_config.sh')
+
+        print 'Creating directories.'
+        install_daemon_dirs()
+
+def install_daemon_dirs():
+    sudo('mkdir -p /var/log/service')
+    sudo('chmod 777 -R /var/log/service/')
+
+    sudo('mkdir -p /var/service/pids')
+    sudo('chmod 777 -R /var/service/pids/')
+
+#################################################################################
+# USER
+#################################################################################
+def install_user(username, password):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run(' grep "^%s:" /etc/passwd' %username)
+
+    if result.failed:
+        print 'Creating user: (%s) in group: (%s)' %(username, username)
+        run('sudo addgroup %s' %username)
+        run('sudo useradd %s -g %s -m -s /bin/bash -p `mkpasswd %s`' %(username, username, password))
+
+#################################################################################
+# MONIT
+#################################################################################
+def install_monit():
+    run('sudo apt-get install -y monit')
+
+    """
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/monit')
+
+    if result.failed:
+        run('wget http://mmonit.com/monit/dist/monit-5.5.tar.gz')
+        run('sudo mv monit-5.5.tar.gz /usr/lib/')
+
+        with cd('/usr/lib'):
+            sudo('tar xzf monit-5.5.tar.gz')
+            sudo('rm monit-5.5.tar.gz')
+            sudo('ln -s monit-5.5 monit')
+
+        with cd('/usr/lib/monit'):
+            sudo('./configure --without-pam --without-ssl')
+            sudo('make')
+            sudo('make install')
+    """
+
+#################################################################################
+# UPDATE CONFIG
+#################################################################################
+def install_update_config():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l update_config.py')
+
+    if result.failed:
+        run('wget https://github.com/premal/config/raw/master/update_config.py -O update_config.py')
+
+#################################################################################
+# BASHRC
+#################################################################################
+def install_bashrc(service_type):
+    install_update_config()
+
+    run('wget https://raw.github.com/premal/config/master/%s/.%src -O /home/ubuntu/.%src' %(service_type, service_type, service_type))
+
+    code = ["if [ -f .%src ]; then" %service_type,
+            "    . ~/.%src" %service_type,
+            "fi\n"]
+
+    run('python update_config.py .bashrc "%s"' %'\n'.join(code))        
+    run('source /home/ubuntu/.bashrc')
+
+#################################################################################
+# ENV.HOSTS
+#################################################################################
+def get_hosts(org='ntropy', service_type=None, state=None, master=False, slave=False, remote=True):
+    if remote:
+        return [x.public_dns_name for x in aws.get_instances(
+            service_type=service_type, org=org, state=state, master=master, slave=slave)]
+    else:
+        return ['localhost']
+
+def set_hosts(org='ntropy', service_type=None, state='running', master=False, slave=False, remote=True):
+    env.hosts = get_hosts(org=org, service_type=service_type, state=state, master=master, slave=slave, remote=remote)
+    print env.hosts
+
+#################################################################################
+# GANGLIA SOFTWARE
+#################################################################################
+def install_ganglia_dependencies():
+    sudo('apt-get -y install build-essential libapr1-dev libconfuse-dev libexpat1-dev python-dev')
+
+def install_ganglia_master():
+    install_ganglia_dependencies()
+    sudo('apt-get -y install ganglia-monitor ganglia-webfrontend gmetad')
+    install_ganglia_rrd_dir()
+
+def install_ganglia_slave():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        print 'Installing ganglia'
+        install_ganglia_dependencies()
+        sudo('apt-get -y install ganglia-monitor')
+        install_ganglia_rrd_dir()
+
+def install_ganglia_rrd_dir():
+    sudo('mkdir -p /var/lib/ganglia/rrds')
+    sudo('chown -R ganglia:ganglia /var/lib/ganglia/')
+
+#################################################################################
+# GANGLIA CONFIG
+#################################################################################
+def install_ganglia_master_gmetad_config(service_type, org='ntropy', branch='develop', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    sudo('cp /var/ntropy/conf/ganglia/%s-gmetad-conf /etc/ganglia/gmetad.conf' %service_type)
+
+def install_ganglia_master_gmond_config(service_type, org='ntropy', branch='develop', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    sudo('cp /var/ntropy/conf/ganglia/%s-master-gmond.conf /etc/ganglia/gmond.conf' %service_type)
+
+def install_ganglia_slave_gmond_config(service_type, org='ntropy', branch='develop', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    master = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0]
+    hInstances = aws.get_instances(service_type='hbase', org=org, state='running', slave=True)
+    for instance in hInstances:
+        if (''.join(re.findall(r'\d+', instance.private_ip_address)) ==
+            run('python -c "import socket, re; print \'\'.join(re.findall(r\'\d+\', socket.gethostbyname(socket.gethostname())))"')):
+            code_lines = ["f = open('%s-slave-gmond.conf').read()" %service_type,
+                          "out = f.replace('REPLACE_WITH_SLAVE_LOCATION', '%s')" %''.join(re.findall(r'\d+', instance.ip_address)),
+                          "out = out.replace('REPLACE_WITH_MASTER', '%s')" %master.public_dns_name,
+                          "f = open('/etc/ganglia/gmond.conf', 'w')",
+                          "f.write(out)",
+                          "f.close()"
+            ]
+
+            with cd('/var/ntropy/conf/ganglia'):
+                run('sudo python -c "%s"' %'; '.join(code_lines))
+
+#################################################################################
+# GANGLIA SERVICE
+#################################################################################
+def start_ganglia_master():
+    sudo('/etc/init.d/gmetad start')
+    sudo('/etc/init.d/ganglia-monitor start')
+
+def start_ganglia_slave():
+    sudo('/etc/init.d/ganglia-monitor start')
+
+def stop_ganglia_master():
+    sudo('/etc/init.d/gmetad stop')
+    sudo('/etc/init.d/ganglia-monitor stop')
+
+def stop_ganglia_slave():
+    sudo('/etc/init.d/ganglia-monitor stop')
+
+def restart_ganglia_master():
+    start_ganglia_master()
+    start_ganglia_slave()
+
+def restart_ganglia_slave():
+    stop_ganglia_master()
+    stop_ganglia_slave()
+
+#################################################################################
+# GANGLIA DISK STATS
+#################################################################################
+def install_ganglia_disk_stats():
+    sudo('mkdir -p /usr/lib/ganglia/python_modules')
+    with cd('/usr/lib/ganglia/python_modules'):
+        sudo('wget https://raw.github.com/ganglia/gmond_python_modules/master/diskstat/python_modules/diskstat.py -O diskstat.py')
+
+def run_ganglia_disk_stats():
+    sudo ('nohup sh -c "python /usr/lib/ganglia/python_modules/diskstat.py -g &"')
+
+#################################################################################
+# SECURITY LIMITS
+#################################################################################
+def install_security_limits(service_type, org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    security_map = dict(
+        storm = dict(
+            nproc = dict(
+                type = '-',
+                value = 1024,
+            ),
+            nofile = dict(
+                type = '-',
+                value = 65535,
+            ),
+        ),
+        hadoop = dict(
+            nproc = dict(
+                type = '-',
+                value = 1024,
+            ),
+            nofile = dict(
+                type = '-',
+                value = 65535,
+            ),
+        ),
+        hbase = dict(
+            nproc = dict(
+                type = '-',
+                value = 1024,
+            ),
+            nofile = dict(
+                type = '-',
+                value = 65535,
+            ),
+        )
+    )
+
+    for key, value in security_map.get(service_type).iteritems():
+        config = [service_type]
+        config.append(value.get('type'))
+        config.append(key)
+        config.append(str(value.get('value')))
+        config_line = '\t'.join(config)
+        with cd('/var/ntropy/scripts'):
+            sudo('python update_config.py /etc/security/limits.conf "%s"' %config_line)
+
+#################################################################################
+# JAVA
+#################################################################################
+def install_java():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/jvm/sun-java6')
+
+    if result.failed:
+        print 'Downloading and installing Java'
+        with settings(hide('running', 'stdout', 'warnings')):
+            run('wget https://s3.amazonaws.com/bootstrap-software/jdk-6u38-linux-x64.bin -O jdk-6u38-linux-x64.bin')
+            run('sudo chmod +x jdk-6u38-linux-x64.bin')
+            run('echo -ne \'\n\' |./jdk-6u38-linux-x64.bin')
+            run('sudo mkdir -p /usr/lib/jvm')
+            run('sudo mv jdk1.6.0_38 /usr/lib/jvm/sun-java6')
+            run('sudo update-alternatives --install /usr/bin/javac javac /usr/lib/jvm/sun-java6/bin/javac 1')
+            run('sudo update-alternatives --install /usr/bin/java java /usr/lib/jvm/sun-java6/bin/java 1')
+            run('sudo update-alternatives --install /usr/bin/javaws javaws /usr/lib/jvm/sun-java6/bin/javaws 1')
+            run('sudo update-alternatives --set javac /usr/lib/jvm/sun-java6/bin/javac')
+            run('sudo update-alternatives --set java /usr/lib/jvm/sun-java6/bin/java')
+            run('sudo update-alternatives --set javaws /usr/lib/jvm/sun-java6/bin/javaws')
+            run('rm jdk-6u38-linux-x64.bin')
+            run('export JAVA_HOME=/usr/lib/jvm/sun-java6/')
+    else:
+        print 'Java is already installed'
+
+#################################################################################
+# MYSQL SERVER SOFTWARE SETUP
+#################################################################################
+def setup_mysql_server(org='ntropy'):
+    install_basic_software()
+    install_mysql()
+    setup_ntropy_database()
+
+def get_mysql_root_pass():
+    return 'ntropydb'
+
+def get_mysql_ntropy_pass():
+    return '2bc869f70e28759f57561b5303f4883c'
+
+def install_mysql():
+    # TODO change this to installing from a binary
+    run('sudo apt-get -y install mysql-server')
+
+def setup_ntropy_database():
+    # TODO change mysql remote host access, not allow %
+    command =  'CREATE DATABASE ntropy;'
+    command += 'CREATE USER ntropy IDENTIFIED BY \'%s\';' %get_mysql_ntropy_pass()
+    command += 'GRANT ALL ON ntropy.* TO ntropy@\'%%\' IDENTIFIED BY \'%s\';' %get_mysql_ntropy_pass()
+    command += 'FLUSH PRIVILEGES;'
+    run('mysql -u root -p%s -e "%s"' %(get_mysql_root_pass(), command))
+
+def install_mysql_config(org='ntropy', branch='master', checkout=True):
+    install_code()
+    checkout_branch(branch)
+    run('sudo cp /var/ntropy/conf/mysql/mysql-master.my.cnf /etc/mysql/my.cnf')
+
+#################################################################################
+# MYSQL SERVERS SERVICES
+#################################################################################
+def start_mysql():
+    run('sudo /etc/init.d/mysql start')
+
+def restart_mysql():
+    run('sudo /etc/init.d/mysql restart')
+
+#################################################################################
+# DJANGO WEBSERVER SOFTWARE SETUP
+#################################################################################
+def install_mysqldb():
+    run('sudo apt-get -y install python-mysqldb')
+
+def install_nginx():
+    run('sudo apt-get -y install python-flup')
+    # TODO change this to installing from a binary
+    run('sudo apt-get -y install nginx')
+
+def install_django():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('python -c "import django;"')
+
+    if result.failed:
+        run('wget https://s3.amazonaws.com/bootstrap-software/Django-1.4.3.tar.gz -O Django-1.4.3.tar.gz')
+        run('tar xzf Django-1.4.3.tar.gz')
+        with cd('Django-1.4.3'):
+            run('sudo python setup.py install')
+        run('rm Django-1.4.3.tar.gz')
+        run('sudo rm -rf Django-1.4.3')
+    else:
+        print 'Django is already installed'
+
+#################################################################################
+# BEACON SERVERS SOFTWARE SETUP
+#################################################################################
+def setup_beacon_web_server(org='ntropy'):
+    install_basic_software()
+    install_java()
+
+#################################################################################
+# BEACON SERVERS CODE AND CONFIG SETUP
+#################################################################################
+def install_beacon_code_config(server_type, org='ntropy'):
+    install_jar()
+    install_beacon_config(server_type, org=org)
+    if org in ['ntropy', 'grepdata']:
+        install_key(server_type)
+
+def install_jar():
+    pass
+
+def install_beacon_config(server_type, org):
+    if server_type not in ['dev', 'prod']:
+        raise ValueError, "Valid server types are dev and prod"
+    
+    if server_type == 'dev':
+        run('wget https://github.com/premal/config/raw/master/beacon/dev-beacon-config.yml -O dev-beacon-config.yml')
+    elif server_type == 'prod':
+        run('wget https://github.com/premal/config/raw/master/beacon/prod-beacon-config.yml -O prod-beacon-config.yml')
+        if org in ['ntropy', 'grepdata']:
+            run('wget https://github.com/premal/config/raw/master/beacon/prod-https-beacon-config.yml -O prod-https-beacon-config.yml')
+
+def install_key(server_type):
+    pass
+
+#################################################################################
+# BEACON SERVERS SERVICES
+#################################################################################
+def _validate_service_type(service_type):
+    if service_type not in ['dev', 'prod', 'prod-https']:
+        raise ValueError, "Valid values are dev, prod and prod-https"
+
+def start_beacon_web(service_type):
+    _validate_service_type(service_type)
+    sudo('/etc/init.d/beacon %s start' %(service_type))
+
+def stop_beacon_web():
+    _validate_service_type(service_type)
+    sudo('/etc/init.d/beacon %s stop' %(service_type))
+
+def restart_beacon_web():
+    _validate_service_type(service_type)
+    sudo('/etc/init.d/beacon %s stop' %(service_type))
+    sudo('/etc/init.d/beacon %s start' %(service_type))
+
+#################################################################################
+# MONITORING
+#################################################################################
+def install_monit_config(service, sub_service=None):
+    filename = service
+    if sub_service:
+        filename = '%s-%s' %(service, sub_service)
+
+    sudo('wget https://github.com/premal/config/raw/master/%s/%s.monit -O /etc/monit/conf.d/%s.monit' %(service, filename, filename))
+    sudo('/etc/init.d/monit restart')
+
+#################################################################################
+# ZOOKEEPER SOFTWARE SETUP
+#################################################################################
+def setup_zookeeper_server(org='ntropy'):
+    install_basic_software()
+    install_java()
+    install_user('zookeeper', 'zookeeper')
+    install_zookeeper()
+
+def install_zookeeper():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/zookeeper')
+
+    if result.failed:
+        run('wget https://s3.amazonaws.com/bootstrap-software/zookeeper-3.4.5.tar.gz -O zookeeper-3.4.5.tar.gz')
+        run('sudo mv zookeeper-3.4.5.tar.gz /usr/lib/')
+
+        with cd('/usr/lib/'):
+            run('sudo tar xzf zookeeper-3.4.5.tar.gz')
+            run('sudo ln -s zookeeper-3.4.5 zookeeper')
+            run('sudo rm zookeeper-3.4.5.tar.gz')
+            run('sudo chown -R zookeeper:zookeeper /usr/lib/zookeeper/')
+            run('sudo chown -R zookeeper:zookeeper /usr/lib/zookeeper')
+    else:
+        print 'Zookeeper is already installed'
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /data/zookeeper')
+
+    if result.failed:
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            run('sudo mkdir /data')
+        run('sudo mkdir /data/zookeeper')
+        run('sudo chown -R zookeeper:zookeeper /data/zookeeper')
+
+#################################################################################
+# ZOOKEEPER CODE AND CONFIG SETUP
+#################################################################################
+def install_zookeeper_config(org='ntropy', branch='master'):
+    install_code()
+    checkout_branch(branch)
+
+    install_zoo_data_dir()
+    install_zoo_cfg(org=org, branch=branch, checkout=False)
+    install_zoo_log_dir()
+    install_zkEnv(org=org, branch=branch, checkout=False)
+    install_bashrc(service_type='zookeeper')
+    install_monit_config(service='zookeeper')
+
+def install_zoo_data_dir():
+    run('sudo mkdir -p /mnt/data/zookeeper')
+    run('sudo chown -R zookeeper:zookeeper /mnt/data/zookeeper')
+
+def install_zoo_log_dir():
+    run('sudo mkdir -p /var/log/zookeeper')
+    run('sudo chown -R zookeeper:zookeeper /var/log/zookeeper')
+
+def install_zkEnv():
+    sudo('wget https://github.com/premal/config/blob/master/zookeeper/zkEnv.sh -O /usr/lib/zookeeper/bin/zkEnv.sh')
+    sudo('chown zookeeper:zookeeper /usr/lib/zookeeper/bin/zkEnv.sh')
+
+def install_zoo_cfg():
+    sudo('wget https://github.com/premal/config/blob/master/zookeeper/zoo.cfg -O zoo.cfg')
+
+    zkInstances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+    zkServers = '\n'.join(['server.%s=%s:2888:3888' %(''.join(re.findall(r'\d+', x.ip_address)), x.public_dns_name) for x in zkInstances])
+    code_lines = ["f = open('zoo.cfg').read()" ,
+                  "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
+                  "f = open('/usr/lib/zookeeper/conf/zoo.cfg', 'w')",
+                  "f.write(out)",
+                  "f.close()"
+    ]
+    sudo('python -c "%s"' %'; '.join(code_lines), user='zookeeper')
+
+    zkInstances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+    for instance in zkInstances:
+        print ''.join(re.findall(r'\d+', instance.private_ip_address))
+        if (''.join(re.findall(r'\d+', instance.private_ip_address)) ==
+            run('python -c "import socket, re; print \'\'.join(re.findall(r\'\d+\', socket.gethostbyname(socket.gethostname())))"')):
+            code_lines = ["f = open('/mnt/data/zookeeper/myid', 'w')" ,
+                          "f.write('%s')" %int(''.join(re.findall(r'\d+', instance.ip_address))),
+                          "f.close()"
+            ]
+            run('python -c "%s"' %'; '.join(code_lines), user='zookeeper')
+
+#################################################################################
+# ZOOKEEPER SERVICES
+#################################################################################
+def start_zookeeper():
+    with cd('/usr/lib/zookeeper'):
+        run('sudo -u zookeeper bin/zkServer.sh start')
+
+def restart_zookeeper():
+    with cd('/usr/lib/zookeeper'):
+        run('sudo -u zookeeper bin/zkServer.sh restart')
+
+def stop_zookeeper():
+    with cd('/usr/lib/zookeeper'):
+        run('sudo -u zookeeper bin/zkServer.sh stop')
+
+#################################################################################
+# KAFKA SOFTWARE SETUP
+#################################################################################
+def setup_kafka_server(org='ntropy'):
+    install_basic_software()
+    install_java()
+    install_user('kafka', 'kafka')
+    install_kafka()
+
+def install_kafka():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/kafka')
+
+    if result.failed:
+        run('wget https://s3.amazonaws.com/bootstrap-software/kafka-0.7.2-incubating-src.tgz -O kafka-0.7.2.tgz')
+        sudo('mv kafka-0.7.2.tgz /usr/lib/')
+
+        with cd('/usr/lib/'):
+            sudo('tar xzf kafka-0.7.2.tgz')
+            sudo('rm kafka-0.7.2.tgz')
+            sudo('ln -s kafka-0.7.2-incubating-src kafka')
+            sudo('chown -R kafka:kafka /usr/lib/kafka/')
+            sudo('chown -R kafka:kafka /usr/lib/kafka')
+
+        with cd('/usr/lib/kafka'):
+            sudo('./sbt update')
+            sudo('./sbt package')
+    else:
+        print 'Kafka is already installed'
+
+    sudo('mkdir -p /data/kafka')
+    sudo('chown -R kafka:kafka /data/kafka')
+
+#################################################################################
+# KAFKA CODE AND CONFIG SETUP
+#################################################################################
+def install_kafka_config(org='ntropy', branch='master'):
+    install_code()
+    checkout_branch(branch)
+    install_kafka_properties(org=org, branch=branch, checkout=False)
+    install_kafka_daemon(org=org, branch=branch, checkout=False)
+    install_bashrc(service_type='kafka', branch=branch, checkout=False)
+
+def install_kafka_properties(org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    kInstances = aws.get_instances(service_type='kafka', org=org, state='running')
+    for instance in kInstances:
+        if (''.join(re.findall(r'\d+', instance.private_ip_address)) ==
+            run('python -c "import socket, re; print \'\'.join(re.findall(r\'\d+\', socket.gethostbyname(socket.gethostname())))"')):
+            public_ip = instance.public_dns_name
+            instance_id = int(''.join(re.findall(r'\d+', instance.id)))
+
+    instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+    zkServers = ','.join(['%s:2181' %x.public_dns_name for x in instances])
+    zk_code_lines = ["f = open('server.properties').read()",
+                     "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS','%s')" %zkServers,
+                     "out = out.replace('REPLACE_WITH_EXTERNAL_IP','%s')" %public_ip,
+                     "f = open('/usr/lib/kafka/config/server.properties', 'w')",
+                     "f.write(out)",
+                     "f.close()"
+    ]
+
+    bk_code_lines = ["f = open('server.properties').read()",
+                     "out = f.replace('REPLACE_WITH_BROKER_ID','%s')" %instance_id,
+                     "f = open('/usr/lib/kafka/config/server.properties', 'w')",
+                     "f.write(out)",
+                     "f.close()"
+    ]
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/kafka/config/server.properties.default')
+
+    if result.failed:
+        with cd('/var/ntropy/conf/kafka'):
+            run('sudo -u kafka python -c "%s"' %'; '.join(zk_code_lines))
+        with cd('/usr/lib/kafka/config/'):
+            run('sudo -u kafka python -c "%s"' %'; '.join(bk_code_lines))
+            run('sudo -u kafka cp /var/ntropy/conf/kafka/server.properties server.properties.default')
+    else:
+        #with cd('/usr/lib/kafka/config'):
+        with cd('/var/ntropy/conf/kafka'):
+            run('sudo -u kafka python -c "%s"' %'; '.join(zk_code_lines))
+        with cd('/usr/lib/kafka/config/'):
+            run('sudo -u kafka python -c "%s"' %'; '.join(bk_code_lines))
+
+def install_kafka_daemon(org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /etc/init.d/kafka')
+
+    if result.failed:
+        run('sudo cp /var/ntropy/conf/kafka/init.d /etc/init.d/kafka')
+        run('sudo chmod +x /etc/init.d/kafka')
+
+    run('sudo cp /var/ntropy/conf/kafka/kafka-server-stop.sh /usr/lib/kafka/bin/kafka-server-stop.sh')
+    run('sudo cp /var/ntropy/conf/kafka/rc.local /etc/init.d/rc.local')
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /var/log/kafka')
+
+    if result.failed:
+        run('sudo mkdir /var/log/kafka')
+        run('sudo chown kafka:kafka /var/log/kafka')
+
+#################################################################################
+# KAFKA SERVICES
+#################################################################################
+# TODO figure out start kafka in background mode
+def start_kafka():
+    #run('sudo /etc/init.d/kafka start')
+    with cd('/usr/lib/kafka'):
+        run('nohup sh -c "sudo -u kafka service kafka start &"')
+
+def stop_kafka():
+    run('sudo /etc/init.d/kafka stop')
+
+def restart_kafka():
+    stop_kafka()
+    start_kafka()
+
+#################################################################################
+# STORM SOFTWARE SETUP
+#################################################################################
+def setup_storm_server(org='ntropy'):
+    install_basic_software()
+    install_storm_essentials()
+    install_java()
+    install_zeromq()
+    install_jzmq()
+    install_user('storm', 'storm')
+    install_storm()
+
+def install_storm_essentials():
+    run('sudo apt-get update')
+    run('sudo apt-get install -y git unzip build-essential pkg-config libtool autoconf uuid-dev')
+
+def install_zeromq():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/zeromq')
+
+    if result.failed:
+        run('wget http://download.zeromq.org/zeromq-2.1.7.tar.gz')
+        run('sudo mv zeromq-2.1.7.tar.gz /usr/lib/')
+        with cd('/usr/lib'):
+            run('sudo tar xzf zeromq-2.1.7.tar.gz')
+            sudo('rm zeromq-2.1.7.tar.gz')
+            run('sudo ln -s zeromq-2.1.7 zeromq')
+        with cd('/usr/lib/zeromq'):
+            run('sudo ./configure')
+            run('sudo make')
+            run('sudo make install')
+    else:
+        print 'ZeroMQ is already installed'
+
+def install_jzmq():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l jzmq/done.log')
+
+    if result.failed:
+        run('wget https://s3.amazonaws.com/bootstrap-software/jzmq.tar.gz -O jzmq.tar.gz')
+        run('tar xzf jzmq.tar.gz')
+        with cd ('jzmq/src'):
+            sudo('touch classdist_noinst.stamp')
+            sudo('CLASSPATH=.:./.:$CLASSPATH javac -d . org/zeromq/ZMQ.java org/zeromq/ZMQException.java org/zeromq/ZMQQueue.java org/zeromq/ZMQForwarder.java org/zeromq/ZMQStreamer.java')
+        with cd ('jzmq'):
+            put('/home/premal/dev/ntropy/conf/storm/environment', '/etc/environment', use_sudo=True)
+            run('sudo ./autogen.sh')
+            run('sudo ./configure')
+            run('sudo make')
+            run('sudo make install')
+            run('touch done.log')
+    else:
+        print 'JZMQ is already installed'
+
+def install_storm():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/storm')
+
+    if result.failed:
+        run('wget https://s3.amazonaws.com/bootstrap-software/storm-0.9.0-wip15.zip -O storm-0.9.0-wip15.zip')
+        run('sudo mv storm-0.9.0-wip15.zip /usr/lib/')
+        with cd('/usr/lib'):
+            run('sudo unzip storm-0.9.0-wip15.zip')
+            run('sudo rm storm-0.9.0-wip15.zip')
+            run('sudo ln -s storm-0.9.0-wip15 storm')
+            run('sudo chown -R storm:storm /usr/lib/storm/')
+            run('sudo chown -R storm:storm /usr/lib/storm')
+
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            run('sudo mkdir /data')
+        run('sudo mkdir /data/storm')
+        run('sudo chown -R storm:storm /data/storm')
+    else:
+        print 'Storm is already installed'
+
+#################################################################################
+# STORM CODE AND CONFIG SETUP
+#################################################################################
+def install_storm_code_config(org='ntropy', branch='master'):
+    install_code()
+    checkout_branch(branch)
+    install_storm_code(branch=branch, org=org, checkout=False)
+    install_storm_config(branch=branch, org=org, checkout=False)
+    install_storm_daemon(branch=branch, org=org, checkout=False)
+    install_service_config(branch=branch, checkout=False)
+    install_bashrc(service_type='storm')
+    install_storm_symlinks()
+
+def install_storm_code(org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+def install_storm_config(org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    with cd('/usr/lib/storm'):
+        instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+        zkServers = '\n     - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
+        storm_master = aws.get_instances(service_type='storm', org=org, state='running', master=True)[0]
+        code_lines = ["f = open('storm.yaml').read()",
+                      "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
+                      "out = out.replace('REPLACE_WITH_NIMBUS_SERVER', '%s')" %storm_master.public_dns_name,
+                      "f = open('/usr/lib/storm/conf/storm.yaml', 'w')",
+                      "f.write(out)",
+                      "f.close()"
+        ]
+        with cd('/var/ntropy/conf/storm'):
+            run('sudo -u storm python -c "%s"' %'; '.join(code_lines))
+
+def install_storm_daemon(org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /etc/init.d/storm')
+
+    if result.failed:
+        run('sudo cp /var/ntropy/conf/storm/init.d /etc/init.d/storm')
+        run('sudo chmod +x /etc/init.d/storm')
+
+    sInstances = aws.get_instances(service_type='storm', org=org, state='running')
+    for instance in sInstances:
+        if (''.join(re.findall(r'\d+', instance.private_ip_address)) ==
+            run('python -c "import socket, re; print \'\'.join(re.findall(r\'\d+\', socket.gethostbyname(socket.gethostname())))"')):
+            if instance.tags.get('Name2').endswith('master'):
+                run('sudo cp /var/ntropy/conf/storm/rc.local.master /etc/init.d/rc.local')
+            elif instance.tags.get('Name2').endswith('slave'):
+                run('sudo cp /var/ntropy/conf/storm/rc.local.slave /etc/init.d/rc.local')
+
+def install_storm_symlinks():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('ln -s /usr/lib/storm/logs /var/log/storm', user='root')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('ln -s /usr/lib/storm/conf /etc/storm-conf', user='root')
+
+#################################################################################
+# STORM SERVICES
+#################################################################################
+def start_storm_cluster(org='ntropy'):
+    env.hosts = aws.get_instances(service_type='storm', org=org, state='running')
+    for instance in env.hosts:
+        if instance.tags.get('Name2').endswith('master'):
+            with settings(host_string=instance.public_dns_name):
+                start_storm_master()
+        elif instance.tags.get('Name2').endswith('slave'):
+            with settings(host_string=instance.public_dns_name):
+                start_storm_worker()
+
+def stop_storm_cluster(org='ntropy'):
+    env.hosts = aws.get_instances(service_type='storm', org=org, state='running')
+    for instance in env.hosts:
+        if instance.tags.get('Name2').endswith('master'):
+            with settings(host_string=instance.public_dns_name):
+                stop_storm_master()
+        elif instance.tags.get('Name2').endswith('slave'):
+            with settings(host_string=instance.public_dns_name):
+                stop_storm_worker()
+
+def restart_storm_cluster(org='ntropy'):
+    env.hosts = aws.get_instances(service_type='storm', org=org, state='running')
+    for instance in env.hosts:
+        if instance.tags.get('Name2').endswith('master'):
+            with settings(host_string=instance.public_dns_name):
+                restart_storm_master()
+        elif instance.tags.get('Name2').endswith('slave'):
+            with settings(host_string=instance.public_dns_name):
+                restart_storm_worker()
+
+def start_storm_master():
+    start_storm_nimbus()
+    start_storm_ui()
+
+def stop_storm_master():
+    stop_storm_nimbus()
+    stop_storm_ui()
+
+def restart_storm_master():
+    stop_storm_master()
+    start_storm_master()
+
+def start_storm_nimbus():
+    run('nohup sh -c "sudo -u storm /etc/init.d/storm nimbus start &"')
+
+def stop_storm_nimbus():
+    run('sudo -u storm /etc/init.d/storm nimbus stop')
+
+def restart_storm_nimbus():
+    stop_storm_nimbus()
+    start_storm_nimbus()
+
+def start_storm_ui():
+    run('nohup sh -c "sudo -u storm /etc/init.d/storm ui start &"')
+
+def stop_storm_ui():
+    run('sudo -u storm /etc/init.d/storm ui stop')
+
+def restart_storm_ui():
+    stop_storm_ui()
+    start_storm_ui()
+
+def start_storm_worker():
+    run('nohup sh -c "sudo -u storm /etc/init.d/storm supervisor start &"')
+
+def stop_storm_worker():
+    run('sudo -u storm /etc/init.d/storm supervisor stop')
+
+def restart_storm_worker():
+    stop_storm_worker()
+    start_storm_worker()
+
+#################################################################################
+# STORM LOGS
+#################################################################################
+def delete_storm_logs():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('rm /usr/lib/storm/logs/*.log.?')
+
+#################################################################################
+# HBASE SOFTWARE SETUP
+#################################################################################
+def install_passwordless_ssh(username):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('sudo ls -l /home/%s/.ssh/id_rsa' %username)
+
+    if result.failed:
+        run('sudo -u %s ssh-keygen -t rsa -P "" -f /home/%s/.ssh/id_rsa' %(username, username))
+        run('sudo -u %s cp /home/%s/.ssh/id_rsa.pub /home/%s/.ssh/authorized_keys' %(
+            username, username, username))
+
+def setup_hbase_server(org='ntropy'):
+    install_basic_software()
+    install_java()
+    install_user('hadoop', 'hadoop')
+    install_passwordless_ssh('hadoop')
+    install_user('hbase', 'hbase')
+    install_passwordless_ssh('hbase')
+    install_hadoop()
+    install_hbase()
+    install_hbase_symlinks()
+
+def setup_hbase(org='ntropy'):
+    install_user('hbase', 'hbase')
+    install_passwordless_ssh('hbase')
+    install_hbase()
+
+def install_hadoop():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/hadoop')
+
+    if result.failed:
+        run('wget https://s3.amazonaws.com/bootstrap-software/hadoop-1.0.4-bin.tar.gz -O hadoop-1.0.4-bin.tar.gz')
+        run('sudo mv hadoop-1.0.4-bin.tar.gz /usr/lib/')
+        with cd('/usr/lib'):
+            run('sudo tar xzf hadoop-1.0.4-bin.tar.gz')
+            run('sudo rm hadoop-1.0.4-bin.tar.gz')
+            run('sudo ln -s hadoop-1.0.4 hadoop')
+            run('sudo chown -R hadoop:hadoop hadoop/')
+            run('sudo chown -R hadoop:hadoop hadoop')
+    else:
+        print 'Hadoop is already installed'
+        
+    install_hdfs_dirs()
+        
+def install_hdfs_dirs():
+    with settings(hide('warnings', 'stdout', 'stderr'), warn_only=True):
+        run('sudo mkdir -p /mnt/name')
+    run('sudo chown -R hadoop:hadoop /mnt/name/')
+
+    with settings(hide('warnings', 'stdout', 'stderr'), warn_only=True):
+        run('sudo mkdir -p /mnt/name')
+    run('sudo chown -R hadoop:hadoop /mnt/')
+
+    with settings(hide('warnings', 'stdout', 'stderr'), warn_only=True):
+        run('sudo mkdir -p /hdfs/volume1')
+    with settings(hide('warnings', 'stdout', 'stderr'), warn_only=True):
+        run('sudo mkdir -p /hdfs/volume1/data')
+    with settings(hide('warnings', 'stdout', 'stderr'), warn_only=True):
+        run('sudo mkdir -p /hdfs/volume1/name')
+    run('sudo chown -R hadoop:hadoop /hdfs/')
+
+def install_lzo():
+    sudo('apt-get -y install liblzo2-dev')
+
+    with cd('/usr/lib/hadoop/lib/native/Linux-amd64-64'):
+        sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.a -O libgplcompression.a', user='hadoop')
+        sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.la -O libgplcompression.la', user='hadoop')
+        sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.so.0.0.0 -O libgplcompression.so.0.0.0', user='hadoop')
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/hadoop/lib/native/Linux-amd64-64/libgplcompression.so')
+    if result.failed:
+        with cd('/usr/lib/hadoop/lib/native/Linux-amd64-64'):
+            sudo('ln -s libgplcompression.so.0.0.0 libgplcompression.so')
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/hadoop/lib/native/Linux-amd64-64/libgplcompression.so.0')
+    if result.failed:
+        with cd('/usr/lib/hadoop/lib/native/Linux-amd64-64'):
+            sudo('ln -s libgplcompression.so.0.0.0 libgplcompression.so.0', user='hadoop')
+
+    with cd('/usr/lib/hadoop/lib/'):
+        sudo('wget https://s3.amazonaws.com/bootstrap-software/hadoop-lzo-0.4.15.jar -O hadoop-lzo-0.4.15.jar', user='hadoop')
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/hbase/lib/native/Linux-amd64-64')
+    if result.failed:
+        sudo('mkdir /usr/lib/hbase/lib/native/Linux-amd64-64', user='hbase')
+
+    with cd('/usr/lib/hbase/lib/native/Linux-amd64-64/'):
+        sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.a -O libgplcompression.a', user='hbase')
+        sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.la -O libgplcompression.la', user='hbase')
+        sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.so.0.0.0 -O libgplcompression.so.0.0.0', user='hbase')
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/hbase/lib/native/Linux-amd64-64/libgplcompression.so')
+    if result.failed:
+        with cd('/usr/lib/hbase/lib/native/Linux-amd64-64/'):
+            sudo('ln -s libgplcompression.so.0.0.0 libgplcompression.so', user='hbase')
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/hbase/lib/native/Linux-amd64-64/libgplcompression.so.0')
+    if result.failed:
+        with cd('/usr/lib/hbase/lib/native/Linux-amd64-64/'):
+            sudo('ln -s libgplcompression.so.0.0.0 libgplcompression.so.0', user='hbase')
+
+    with cd('/usr/lib/hbase/lib/'):
+        sudo('wget https://s3.amazonaws.com/bootstrap-software/hadoop-lzo-0.4.15.jar -O hadoop-lzo-0.4.15.jar', user='hbase')
+
+def install_hbase():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/hbase')
+
+    if result.failed:
+        run('wget https://s3.amazonaws.com/bootstrap-software/hbase-0.94.4.tar.gz -O hbase-0.94.4.tar.gz')
+        run('sudo mv hbase-0.94.4.tar.gz /usr/lib/')
+        with cd('/usr/lib'):
+            run('sudo tar xzf hbase-0.94.4.tar.gz')
+            run('sudo rm hbase-0.94.4.tar.gz')
+            run('sudo ln -s hbase-0.94.4 hbase')
+            run('sudo chown -R hbase:hbase hbase/')
+            run('sudo chown -R hbase:hbase hbase')
+    else:
+        print 'HBase is already installed'
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /data/hbase')
+
+    if result.failed:
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            run('sudo mkdir /data')
+        run('sudo mkdir /data/hbase')
+        run('sudo mkdir /data/hbase/tmp')
+        run('sudo mkdir /data/hbase/local')
+        run('sudo chown -R hbase:hbase /data/hbase')
+
+def install_hbase_symlinks():
+    sudo('ln -s /usr/lib/hbase/logs /var/log/hbase')
+
+#################################################################################
+# HBASE CODE AND CONFIG SETUP
+#################################################################################
+def install_hbase_config(org='ntropy', branch='master'):
+    install_code()
+    checkout_branch(branch)
+
+    install_hdfs_dirs()
+    install_etc_hosts(branch=branch, checkout=False)
+
+    install_hbase_env(org=org, branch=branch, checkout=False)
+    install_hbase_site(org=org, branch=branch, checkout=False)
+    install_hbase_regionservers(org=org, branch=branch, checkout=False)
+    install_security_limits('hbase', org=org, branch=branch)
+
+def install_hdfs_config(org='ntropy', branch='master'):
+    install_code()
+    checkout_branch(branch)
+
+    install_hadoop_env(org=org, branch=branch, checkout=False)
+    install_hdfs_site(org=org, branch=branch, checkout=False)
+    install_hdfs_core_site(org=org, branch=branch, checkout=False)
+    install_hdfs_slaves(org=org, branch=branch, checkout=False)
+    install_security_limits('hadoop', org=org, branch=branch)
+
+"""
+def install_hbase_hdfs_config(org='ntropy', branch='master'):
+    install_code()
+    checkout_branch(branch)
+
+    install_hdfs_dirs()
+    install_etc_hosts(branch=branch, checkout=False)
+
+    install_hbase_env(org=org, branch=branch, checkout=False)
+    install_hbase_site(org=org, branch=branch, checkout=False)
+    install_hbase_regionservers(org=org, branch=branch, checkout=False)
+    install_security_limits('hbase', org=org, branch=branch)
+
+    install_hbase_hadoop_env(org=org, branch=branch, checkout=False)
+    install_hbase_hdfs_site(org=org, branch=branch, checkout=False)
+    install_hbase_hdfs_core_site(org=org, branch=branch, checkout=False)
+    install_hbase_hdfs_slaves(org=org, branch=branch, checkout=False)
+    install_security_limits('hadoop', org=org, branch=branch)
+"""
+
+########################## HBASE ##########################
+def install_hbase_config(org='ntropy', branch='master', checkout=True):
+    masters = aws.get_instances(service_type='hbase', org=org, state='running', master=True)
+    if len(masters) > 1:
+        raise Exception, "Cannot have more than 1 hbase masters. %d found" %len(masters)
+
+    install_code()
+    checkout_branch(branch)
+
+    install_hbase_env(org=org, branch=branch, checkout=False)
+    install_hbase_site(org=org, branch=branch, checkout=False)
+    install_hbase_regionservers(org=org, branch=branch, checkout=False)
+    install_bashrc(service_type='hbase', branch=branch, checkout=False)
+
+def install_hbase_env(org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    with cd('/var/ntropy/conf/hbase'):
+        run('sudo -u hbase cp hbase-env.sh /usr/lib/hbase/conf/hbase-env.sh')
+
+def install_hbase_site(org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+    zkServers = ','.join(["%s" %x.public_dns_name for x in instances])
+    master = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0]
+    code_lines = ["f = open('hbase-site.xml').read()",
+                  "out = f.replace('REPLACE_WITH_NAMENODE', '%s')" %master.public_dns_name,
+                  "out = out.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '%s')" %zkServers,
+                  "f = open('/usr/lib/hbase/conf/hbase-site.xml', 'w')",
+                  "f.write(out)",
+                  "f.close()"
+    ]
+    with cd('/var/ntropy/conf/hbase'):
+        run('sudo -u hbase python -c "%s"' %'; '.join(code_lines))
+
+def install_hbase_regionservers(org='ntropy', branch='master', checkout=True):
+    instances = aws.get_instances(service_type='hbase', org=org, state='running', slave=True)
+    region_servers = '\n'.join([x.public_dns_name for x in instances])
+    if region_servers:
+        code_lines = ["f = open('/usr/lib/hbase/conf/regionservers', 'w')",
+                      "f.write('''%s''')" %region_servers,
+                      "f.close()"
+        ]
+        with cd('/var/ntropy/conf/hbase'):
+            run('sudo -u hbase python -c "%s"' %'; '.join(code_lines))
+    else:
+        run('sudo -u hbase rm /usr/lib/hbase/conf/regionservers')
+
+def install_hbase_metrics(org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    master = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0]
+    with cd('/var/ntropy/conf/hbase/'):
+        code_lines = ["f = open('hadoop-metrics.properties').read()",
+                      "out = f.replace('REPLACE_WITH_GANGLIA_MASTER', '%s')" %master.public_dns_name,
+                      "f = open('/usr/lib/hbase/conf/hadoop-metrics.properties', 'w')",
+                      "f.write(out)",
+                      "f.close()"
+        ]
+        sudo('python -c "%s"' %'; '.join(code_lines), user='hbase')
+
+########################## HDFS ##########################
+def install_hdfs_hdfs_config(org='ntropy', branch='master'):
+    masters = aws.get_instances(service_type='hbase', org=org, state='running', master=True)
+    if len(masters) > 1:
+        raise Exception, "Cannot have more than 1 namenode. %d found" %len(masters)
+
+    install_code()
+    checkout_branch(branch)
+
+    install_hadoop_env(org=org, branch=branch, checkout=False)
+    install_hdfs_site(org=org, branch=branch, checkout=False)
+    install_core_site(org=org, branch=branch, checkout=False)
+    install_hdfs_slaves(org=org, branch=branch, checkout=False)
+    install_hadoop_metrics(org=org, branch=branch, checkout=False)
+    install_hdfs_symlink()
+
+def install_hadoop_env(org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    with cd('/var/ntropy/conf/hadoop'):
+        run('sudo -u hadoop cp hbase-hadoop-env.sh /usr/lib/hadoop/conf/hadoop-env.sh')
+
+def install_hdfs_site(org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    with cd('/var/ntropy/conf/hadoop'):
+        run('sudo -u hadoop cp hbase-hdfs-site.xml /usr/lib/hadoop/conf/hdfs-site.xml')
+
+def install_core_site(org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    master = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0]
+    code_lines = ["f = open('/usr/lib/hadoop/conf/master', 'w')",
+                  "f.write('%s')" %master.public_dns_name,
+                  "f.close()"
+    ]
+    with cd('/var/ntropy/conf/hadoop'):
+        run('sudo -u hadoop python -c "%s"' %'; '.join(code_lines))
+
+    code_lines = ["f = open('hbase-core-site.xml').read()",
+                  "out = f.replace('REPLACE_WITH_NAMENODE', '%s')" %master.public_dns_name,
+                  "f = open('/usr/lib/hadoop/conf/core-site.xml', 'w')",
+                  "f.write(out)",
+                  "f.close()"
+    ]
+    with cd('/var/ntropy/conf/hadoop'):
+        run('sudo -u hadoop python -c "%s"' %'; '.join(code_lines))
+
+def install_hdfs_slaves(org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    instances = aws.get_instances(service_type='hbase', org=org, state='running', slave=True)
+    datanodes = '\n'.join([x.public_dns_name for x in instances])
+    if datanodes:
+        code_lines = ["f = open('/usr/lib/hadoop/conf/slaves', 'w')",
+                      "f.write('''%s''')" %datanodes,
+                      "f.close()"
+        ]
+        with cd('/var/ntropy/conf/hadoop'):
+            run('sudo -u hadoop python -c "%s"' %'; '.join(code_lines))
+    else:
+        run('sudo -u hadoop rm /usr/lib/hadoop/conf/slaves')
+
+def install_hadoop_metrics(org='ntropy', branch='master', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    master = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0]
+    with cd('/var/ntropy/conf/hadoop/'):
+        code_lines = ["f = open('hadoop-metrics2.properties').read()",
+                      "out = f.replace('REPLACE_WITH_GANGLIA_MASTER', '%s')" %master.public_dns_name,
+                      "f = open('/usr/lib/hadoop/conf/hadoop-metrics2.properties', 'w')",
+                      "f.write(out)",
+                      "f.close()"
+        ]
+        sudo('python -c "%s"' %'; '.join(code_lines), user='hadoop')
+
+def install_hadoop_symlinks():
+    sudo('ln -s /usr/lib/hadoop/logs /var/log/hadoop')
+
+#################################################################################
+# HBASE SERVICES
+#################################################################################
+def start_hbase(org='ntropy'):
+    env.hosts = get_hosts(org=org, service_type='hbase', state='running', master=True)
+    for host in env.hosts:
+        with(settings(host_string=host)):
+            __start_hbase()
+
+def __start_hbase(org='ntropy'):
+    with cd('/usr/lib/hbase'):
+        run('sudo -u hbase bin/start-hbase.sh')
+
+def stop_hbase(org='ntropy'):
+    env.hosts = get_hosts(org=org, service_type='hbase', state='running', master=True)
+    for host in env.hosts:
+        with(settings(host_string=host)):
+            __stop_hbase()
+
+def __stop_hbase():
+    with cd('/usr/lib/hbase'):
+        run('sudo -u hbase bin/stop-hbase.sh')
+
+def restart_hbase(org='ntropy'):
+    env.hosts = get_hosts(org=org, service_type='hbase', state='running', master=True)
+    for host in env.hosts:
+        with(settings(host_string=host)):
+            __restart_hbase()
+
+def __restart_hbase(org='ntropy'):
+    __stop_hbase()
+    __start_hbase()
+
+def start_regionserver():
+    with cd('/usr/lib/hbase'):
+        run('sudo -u hbase bin/hbase-daemon.sh start regionserver')
+
+def stop_regionserver():
+    with cd('/usr/lib/hbase'):
+        run('sudo -u hbase bin/hbase-daemon.sh stop regionserver')
+
+def restart_regionserver():
+    stop_regionserver()
+    start_regionserver()
+
+def kill_hbase(org="ntropy"):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        run('sudo pkill -f hbase')
+
+#################################################################################
+# HBASE HDFS SERVICES
+#################################################################################
+def format_namenode(service_type, org='ntropy'):
+    env.hosts = get_hosts(org=org, service_type=service_type, state='running', master=True)
+    for host in env.hosts:
+        with(settings(host_string=host)):
+            __format_namenode()
+
+def __format_namenode():
+    with cd('/usr/lib/hadoop'):
+        run('echo Y | sudo -u hadoop bin/hadoop namenode -format')
+
+def start_namenode(service_type, org='ntropy'):
+    env.hosts = get_hosts(org=org, service_type=service_type, state='running', master=True)
+    for host in env.hosts:
+        with(settings(host_string=host)):
+            __start_namenode()
+
+def __start_namenode():
+    with cd('/usr/lib/hadoop'):
+        run('sudo -u hadoop bin/start-dfs.sh')
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('/usr/lib/hadoop/bin/hadoop fs -ls /hbase')
+
+    if result.failed:
+        run('sudo -u hadoop /usr/lib/hadoop/bin/hadoop fs -mkdir /hbase')
+        run('sudo -u hadoop /usr/lib/hadoop/bin/hadoop fs -chown -R hbase:hbase /hbase')
+
+def stop_namenode(service_type, org='ntropy'):
+    env.hosts = get_hosts(org=org, service_type=service_type, state='running', master=True)
+    for host in env.hosts:
+        with(settings(host_string=host)):
+            __stop_namenode()
+
+def __stop_namenode():
+    with cd('/usr/lib/hadoop'):
+        run('sudo -u hadoop bin/stop-dfs.sh')
+
+def restart_namenode(service_type, org='ntropy'):
+    env.hosts = get_hosts(org=org, service_type=service_type, state='running', master=True)
+    for host in env.hosts:
+        with(settings(host_string=host)):
+            __restart_namenode()
+
+def __restart_namenode():
+    with cd('/usr/lib/hadoop'):
+        __stop_namenode()
+        __start_namenode()
+
+def start_datanode(org='ntropy'):
+    with cd('/usr/lib/hadoop'):
+        run('sudo -u hadoop bin/hadoop-daemon.sh start datanode')
+
+def stop_datanode(org='ntropy'):
+    with cd('/usr/lib/hadoop'):
+        run('sudo -u hadoop bin/hadoop-daemon.sh stop datanode')
+
+def restart_datanode(org='ntropy'):
+    stop_datanode(org=org)
+    start_datanode(org=org)
+
+#################################################################################
+# CREATE SERVERS
+#################################################################################
+def create_mysql_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
+    aws.create_new_instances('mysql', org=org, instance_type=instance_type)
+
+def create_zookeeper_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
+    num_instances = int(num_instances)
+    before_instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+    aws.create_new_instances('zookeeper', instance_type, org=org, num_instances=num_instances)
+    print 'Waiting 60 seconds for aws to initialize the instances'
+    time.sleep(60)
+    after_instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+
+    for host in [x.public_dns_name for x in after_instances]:
+        with settings(host_string=host):
+            install_zookeeper_config(org=org, branch=branch)
+
+    for instance in after_instances:
+        if instance.id in [x.id for x in before_instances]:
+            continue
+        with settings(host_string=instance.public_dns_name):
+            start_zookeeper()
+
+def create_kafka_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
+    num_instances = int(num_instances)
+    before_instances = aws.get_instances(service_type='kafka', org=org, state='running')
+    aws.create_new_instances('kafka', instance_type, org=org, num_instances=num_instances)
+    print 'Waiting 60 seconds for aws to initialize the instances'
+    time.sleep(60)
+    after_instances = aws.get_instances(service_type='kafka', org=org, state='running')
+    for instance in after_instances:
+        if instance.id in [x.id for x in before_instances]:
+            continue
+        with settings(host_string=instance.public_dns_name):
+            install_kafka_config(org=org, branch=branch)
+            start_kafka()
+        aws.add_instances_to_loadbalancer(service_type='kafka', instances=[instance], org='ntropy')
+
+def create_beacon_web_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
+    num_instances = int(num_instances)
+    before_instances = aws.get_instances(service_type='beacon-web', org=org, state='running')
+    aws.create_new_instances('beacon-web', instance_type, org=org, num_instances=num_instances)
+    print 'Waiting 120 seconds for aws to initialize the instances'
+    time.sleep(120)
+    after_instances = aws.get_instances(service_type='beacon-web', org=org, state='running')
+    for instance in after_instances:
+        if instance.id in [x.id for x in before_instances]:
+            continue
+        with settings(host_string=instance.public_dns_name):
+            install_beacon_web_code_config(org=org, branch=branch)
+            restart_beacon_web()
+        #aws.add_instances_to_loadbalancer(service_type='beacon-web', instances=[instance], org='ntropy')
+
+"""
+def create_frontend_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
+    num_instances = int(num_instances)
+    before_instances = aws.get_instances(service_type='frontend', org=org, state='running')
+    aws.create_new_instances('frontend', instance_type, org=org, num_instances=num_instances)
+    print 'Waiting 120 seconds for aws to initialize the instances'
+    time.sleep(120)
+    after_instances = aws.get_instances(service_type='frontend', org=org, state='running')
+    for instance in after_instances:
+        if instance.id in [x.id for x in before_instances]:
+            continue
+        with settings(host_string=instance.public_dns_name):
+            install_beacon_web_code_config(org=org, branch=branch)
+            restart_beacon_web()
+        aws.add_instances_to_loadbalancer(service_type='frontend', instances=[instance], org='ntropy')
+"""
+
+def create_storm_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
+    num_instances = int(num_instances)
+
+    before_instances = aws.get_instances(service_type='storm', org=org, state='running')
+    aws.create_new_instances('storm', instance_type, org=org, num_instances=num_instances)
+
+    print 'Waiting 120 seconds for aws to initialize the instances'
+    time.sleep(120)
+
+    after_instances = aws.get_instances(service_type='storm', org=org, state='running')
+
+    for instance in after_instances:
+        if instance.id in [x.id for x in before_instances]:
+            continue
+        with settings(host_string=instance.public_dns_name):
+            install_storm_code_config(org=org, branch=branch)
+            if instance.tags.get('Name2').endswith('master'):
+                start_storm_master()
+            elif instance.tags.get('Name2').endswith('slave'):
+                start_storm_worker()
+
+def create_hbase_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
+    num_instances = int(num_instances)
+
+    before_instances = aws.get_instances(service_type='hbase', org=org, state='running')
+    aws.create_new_instances('hbase', instance_type, org=org, num_instances=num_instances)
+
+    print 'Waiting 120 seconds for aws to initialize the instances'
+    time.sleep(120)
+
+    after_instances = aws.get_instances(service_type='hbase', org=org, state='running')
+
+    instance_volumes = []
+    for instance in after_instances:
+        if instance.id in [x.id for x in before_instances]:
+            continue
+        with settings(host_string=instance.public_dns_name):
+            install_hbase_hdfs_config(org=org, branch=branch)
+
+    print before_instances
+    print after_instances
+
+    # master starts datanodes and regionservers.
+    # so when slaves are getting initialized with the master,
+    # then don't need to start the slave processes separately
+    master_started = False
+    for instance in after_instances:
+        if instance.id in [x.id for x in before_instances]:
+            continue
+
+        if instance.tags.get('Name2').endswith('master'):
+            with settings(host_string=instance.public_dns_name):
+                __format_namenode()
+                __start_namenode()
+                __start_hbase()
+                master_started = True
+
+        elif instance.tags.get('Name2').endswith('slave'):
+            if master_started:
+                continue
+            with settings(host_string=instance.public_dns_name):
+                pass
+                start_datanode()
+                start_regionserver()
+
+#################################################################################
+# CREATE CLUSTER
+#################################################################################
+def create_cluster(org='ntropy', branch='master',
+                   num_mysql=1, mysql_instance_type='t1.micro',
+                   num_zookeeper=1, zookeeper_instance_type='t1.micro',
+                   num_kafka=1, kafka_instance_type='t1.micro',
+                   num_beacon_web=1, beacon_web_instance_type='t1.micro',
+                   num_storm=1, storm_instance_type='t1.micro',
+                   num_hbase=1, hbase_instance_type='t1.micro',
+                   num_frontend=1, frontend_instance_type='t1.micro',
+                   num_api=1, api_instance_type='t1.micro'):
+
+    create_mysql_servers(org=org, num_instances=num_mysql, instance_type=mysql_instance_type, branch=branch)
+    create_zookeeper_servers(org=org, num_instances=num_zookeeper, instance_type=mysql_instance_type, branch=branch)
+    create_kafka_servers(org=org, num_instances=num_kafka, instance_type=mysql_instance_type, branch=branch)
+    create_beacon_web_servers(org=org, num_instances=num_beacon_web, instance_type=mysql_instance_type, branch=branch)
+    #create_frontend_servers(org=org, num_instances=num_frontend, instance_type=frontend_instance_type, branch=branch)
+    #create_api_servers(org=org, num_instances=num_api, instance_type=api_instance_type, branch=branch)
+    create_storm_servers(org=org, num_instances=num_storm, instance_type=mysql_instance_type, branch=branch)
+    create_hbase_servers(org=org, num_instances=num_hbase, instance_type=mysql_instance_type, branch=branch)
+
+
+#################################################################################
+# GIT
+#################################################################################
+def checkout_branch(branch):
+    with cd('/var/ntropy'):
+        run('git checkout %s' %branch)
+        run('git pull origin %s' %branch)
+
+def install_code():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /var/ntropy')
+
+    if result.failed:
+        run('sudo mkdir /var/ntropy')
+        run('sudo chown ubuntu:ubuntu /var/ntropy')
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /var/ntropy/.gitignore')
+
+    if result.failed:
+        with cd('/var'):
+            with settings(hide('warnings', 'running', 'stdout')):
+                run('git clone https://github.com/vbajaria/ntropy.git ntropy')
+
+def install_git_access():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /home/%s/.ssh/id_rsa' %env.user)
+
+    if result.failed:
+        if env.user == 'ubuntu':
+            put('/home/premal/id_rsa', '/home/%s/.ssh/id_rsa' %env.user)
+            put('/home/premal/id_rsa.pub', '/home/%s/.ssh/id_rsa.pub' %env.user)
+        else:
+            put('/home/premal/.ssh/id_rsa', '/home/%s/.ssh/id_rsa' %env.user)
+            put('/home/premal/.ssh/id_rsa.pub', '/home/%s/.ssh/id_rsa.pub' %env.user)
+        sudo('chmod 600 /home/%s/.ssh/id_rsa' %env.user)
+        sudo('chmod 644 /home/%s/.ssh/id_rsa.pub' %env.user)
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            run('ssh-add')
+
+    #with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+    #    result = run('ls -l /home/%s/.gitconfig' %env.user)
+    #if result.failed:
+    #    put('/home/premal/dev/ntropy/.git/config', '/home/%s/.gitconfig' %env.user)
+
+def install_ssh_config():
+    put('/home/premal/ssh_config', '/etc/ssh/ssh_config', use_sudo=True)
+    run('sudo service ssh restart')
+

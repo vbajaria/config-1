@@ -247,11 +247,3 @@ set httpd port 2812 and
    include /etc/monit/conf.d/*
 #
 
-check process mysql
-    matching "mysql"
-    start program = "/etc/init.d/mysql start"
-    stop program = "/etc/init.d/mysql stop"
-    if failed host localhost port 3306 protocol mysql then restart
-    alert premal@grepdata.com
-
-

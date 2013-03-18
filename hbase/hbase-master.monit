@@ -1,0 +1,7 @@
+check process hbase
+    matching "hbase"
+    start program = "/usr/lib/hbase/bin/hbase-daemon.sh start master"
+    stop program = "/usr/lib/hbase/bin/hbase-daemon.sh stop master"
+    if 5 restarts within 5 cycles then timeout
+    alert premal@grepdata.com
+

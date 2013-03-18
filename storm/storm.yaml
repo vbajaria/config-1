@@ -1,0 +1,30 @@
+storm.zookeeper.servers:
+     - REPLACE_WITH_ZOOKEEPER_SERVERS
+
+nimbus.host: "REPLACE_WITH_NIMBUS_SERVER"
+
+storm.local.dir: "/data/storm"
+
+java.library.path: "/usr/local/lib:/usr/lib/storm"
+
+topology.debug: true
+
+worker.childopts: "-Xmx2048m -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=1 -XX:GCLogFileSize=512M -Xloggc:worker_%s.jvm.log"
+
+supervisor.slots.ports:
+    - 6700
+    - 6701
+    - 6702
+    - 6703
+    - 6704
+    - 6705
+    - 6706
+    - 6707
+    - 6708
+    - 6709
+    - 6710
+    - 6711
+    - 6712
+    - 6713
+    - 6714
+    - 6715

@@ -1,6 +1,6 @@
 check process nimbus with pidfile /var/service/pids/nimbus.pid
     start program = "/etc/init.d/storm nimbus start"
     stop  program = "/etc/init.d/storm nimbus stop"
-    if 5 restarts within 5 cycles then timeout
+    if 2 restarts within 4 cycles then timeout
     alert premal@grepdata.com
 

@@ -53,6 +53,9 @@ def install_basic_software():
         print 'Installing ssh config'
         install_ssh_config()
 
+        print 'Installing /etc/hosts'
+        install_etc_hosts()
+
 #################################################################################
 # ETC HOSTS
 #################################################################################
@@ -61,8 +64,9 @@ def install_etc_hosts(org="ntropy"):
         result = run('ls -l etc_hosts')
 
     if result.failed:
-        print 'Downloading hosts file'
-        result = run('wget https://raw.github.com/premal/config/master/etc_hosts -O etc_hosts')
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            run('wget https://raw.github.com/premal/config/master/etc_hosts -O etc_hosts')
+            print 'Downloaded hosts file'
 
     etc_hosts = []
     for instance in aws.get_instances(org=org, state='running'):
@@ -86,11 +90,9 @@ def install_service_config():
         result = run('ls -l /etc/init.d/service_config.sh')
 
     if result.failed:
-        print 'Downloading service management file.'
-        sudo('wget https://raw.github.com/premal/config/master/service_config.sh -O /etc/init.d/service_config.sh')
-
-        print 'Creating directories.'
-        install_daemon_dirs()
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            sudo('wget https://raw.github.com/premal/config/master/service_config.sh -O /etc/init.d/service_config.sh')
+            install_daemon_dirs()
 
 def install_daemon_dirs():
     sudo('mkdir -p /var/log/service')
@@ -98,6 +100,15 @@ def install_daemon_dirs():
 
     sudo('mkdir -p /var/service/pids')
     sudo('chmod 777 -R /var/service/pids/')
+
+#################################################################################
+# INIT.D
+#################################################################################
+def install_initd(service):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('wget https://github.com/premal/config/raw/master/%s/init.d -O /etc/init.d/%s' %(service, service))
+        sudo('chmod a+x /etc/init.d/%s' %service)
+        print 'Installed startup script'
 
 #################################################################################
 # USER
@@ -116,25 +127,6 @@ def install_user(username, password):
 #################################################################################
 def install_monit():
     run('sudo apt-get install -y monit')
-
-    """
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /usr/lib/monit')
-
-    if result.failed:
-        run('wget http://mmonit.com/monit/dist/monit-5.5.tar.gz')
-        run('sudo mv monit-5.5.tar.gz /usr/lib/')
-
-        with cd('/usr/lib'):
-            sudo('tar xzf monit-5.5.tar.gz')
-            sudo('rm monit-5.5.tar.gz')
-            sudo('ln -s monit-5.5 monit')
-
-        with cd('/usr/lib/monit'):
-            sudo('./configure --without-pam --without-ssl')
-            sudo('make')
-            sudo('make install')
-    """
 
 #################################################################################
 # UPDATE CONFIG
@@ -322,6 +314,34 @@ def install_security_limits(service_type, org='ntropy', branch='master', checkou
             sudo('python update_config.py /etc/security/limits.conf "%s"' %config_line)
 
 #################################################################################
+# KEY MANAGEMENT
+#################################################################################
+def install_key():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        run('wget "%s" -O Ntropy1.pem' %aws.generate_url('bootstrap-software', 'Ntropy1.pem'))
+        run('chmod 400 Ntropy1.pem')
+
+def delete_key():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('rm Ntropy1.pem')
+    
+#################################################################################
+# MONITORING
+#################################################################################
+def install_monit_config():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('wget https://github.com/premal/config/raw/master/monit/monitrc -O /etc/monit/monitrc')
+
+def install_monitoring_config(service, sub_service=None):
+    filename = service
+    if sub_service:
+        filename = '%s-%s' %(service, sub_service)
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('wget https://github.com/premal/config/raw/master/%s/%s.monit -O /etc/monit/conf.d/%s.monit' %(service, filename, filename))
+        sudo('/etc/init.d/monit restart')
+
+#################################################################################
 # JAVA
 #################################################################################
 def install_java():
@@ -415,66 +435,67 @@ def install_django():
 #################################################################################
 # BEACON SERVERS SOFTWARE SETUP
 #################################################################################
-def setup_beacon_web_server(org='ntropy'):
+def setup_beacon_server(org='ntropy'):
     install_basic_software()
     install_java()
 
 #################################################################################
 # BEACON SERVERS CODE AND CONFIG SETUP
 #################################################################################
-def install_beacon_code_config(server_type, org='ntropy'):
-    install_jar()
-    install_beacon_config(server_type, org=org)
+def install_beacon_code_config(org='ntropy'):
+    install_beacon_jar()
+    install_beacon_config()
+
     if org in ['ntropy', 'grepdata']:
-        install_key(server_type)
+        install_beacon_https_cert()
 
-def install_jar():
-    pass
+    install_service_config()
+    install_initd(service='beacon')
+    install_monitoring_config(service='beacon')
 
-def install_beacon_config(server_type, org):
-    if server_type not in ['dev', 'prod']:
-        raise ValueError, "Valid server types are dev and prod"
+def install_beacon_jar():
+    install_key()
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        run('scp -i Ntropy1.pem kickstart.grepdata.com:/var/ntropy/dataapi/target/dataapi-0.1.jar .')
+        sudo('mkdir -p /usr/lib/beacon')
+        sudo('cp dataapi-0.1.jar /usr/lib/beacon/dataapi-0.1.jar')
+        print 'Installed JAR'
+
+    delete_key()
+
+def install_beacon_config():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('mkdir -p /usr/lib/beacon')
+        sudo('wget https://github.com/premal/config/raw/master/beacon/beacon-dev-config.yml -O /usr/lib/beacon/beacon-dev-config.yml')
+        sudo('wget https://github.com/premal/config/raw/master/beacon/beacon-prod-config.yml -O /usr/lib/beacon/beacon-prod-config.yml')
+        sudo('wget https://github.com/premal/config/raw/master/beacon/beacon-prod-https-config.yml -O /usr/lib/beacon/beacon-prod-https-config.yml')
+        print 'Downloaded Configs'
+
+def install_beacon_https_cert():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        run('wget "%s" -O ~/.ssh/beacon.keystore' %aws.generate_url('bootstrap-keys', 'beacon.keystore'))
+        sudo('chmod 400 ~/.ssh/beacon.keystore')
     
-    if server_type == 'dev':
-        run('wget https://github.com/premal/config/raw/master/beacon/dev-beacon-config.yml -O dev-beacon-config.yml')
-    elif server_type == 'prod':
-        run('wget https://github.com/premal/config/raw/master/beacon/prod-beacon-config.yml -O prod-beacon-config.yml')
-        if org in ['ntropy', 'grepdata']:
-            run('wget https://github.com/premal/config/raw/master/beacon/prod-https-beacon-config.yml -O prod-https-beacon-config.yml')
-
-def install_key(server_type):
-    pass
-
 #################################################################################
 # BEACON SERVERS SERVICES
 #################################################################################
 def _validate_service_type(service_type):
-    if service_type not in ['dev', 'prod', 'prod-https']:
-        raise ValueError, "Valid values are dev, prod and prod-https"
+    if service_type not in ['beacon-dev', 'beacon-prod', 'beacon-prod-https']:
+        raise ValueError, "Valid values are beacon-dev, beacon-prod and beacon-prod-https"
 
-def start_beacon_web(service_type):
+def start_beacon_server(service_type):
     _validate_service_type(service_type)
-    sudo('/etc/init.d/beacon %s start' %(service_type))
+    sudo('nohup sh -c "/etc/init.d/beacon %s start &"' %(service_type))
 
-def stop_beacon_web():
-    _validate_service_type(service_type)
-    sudo('/etc/init.d/beacon %s stop' %(service_type))
-
-def restart_beacon_web():
+def stop_beacon_server(service_type):
     _validate_service_type(service_type)
     sudo('/etc/init.d/beacon %s stop' %(service_type))
-    sudo('/etc/init.d/beacon %s start' %(service_type))
 
-#################################################################################
-# MONITORING
-#################################################################################
-def install_monit_config(service, sub_service=None):
-    filename = service
-    if sub_service:
-        filename = '%s-%s' %(service, sub_service)
-
-    sudo('wget https://github.com/premal/config/raw/master/%s/%s.monit -O /etc/monit/conf.d/%s.monit' %(service, filename, filename))
-    sudo('/etc/init.d/monit restart')
+def restart_beacon_server(service_type):
+    _validate_service_type(service_type)
+    stop_beacon_server(service_type)
+    start_beacon_server(service_type)
 
 #################################################################################
 # ZOOKEEPER SOFTWARE SETUP
@@ -491,75 +512,75 @@ def install_zookeeper():
 
     if result.failed:
         run('wget https://s3.amazonaws.com/bootstrap-software/zookeeper-3.4.5.tar.gz -O zookeeper-3.4.5.tar.gz')
-        run('sudo mv zookeeper-3.4.5.tar.gz /usr/lib/')
+        sudo('mv zookeeper-3.4.5.tar.gz /usr/lib/')
 
         with cd('/usr/lib/'):
-            run('sudo tar xzf zookeeper-3.4.5.tar.gz')
-            run('sudo ln -s zookeeper-3.4.5 zookeeper')
-            run('sudo rm zookeeper-3.4.5.tar.gz')
-            run('sudo chown -R zookeeper:zookeeper /usr/lib/zookeeper/')
-            run('sudo chown -R zookeeper:zookeeper /usr/lib/zookeeper')
+            sudo('tar xzf zookeeper-3.4.5.tar.gz')
+            sudo('ln -s zookeeper-3.4.5 zookeeper')
+            sudo('rm zookeeper-3.4.5.tar.gz')
+            sudo('chown -R zookeeper:zookeeper /usr/lib/zookeeper/')
+            sudo('chown -R zookeeper:zookeeper /usr/lib/zookeeper')
+        
+        print 'Installed Zookeeper'
     else:
         print 'Zookeeper is already installed'
 
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /data/zookeeper')
-
-    if result.failed:
-        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-            run('sudo mkdir /data')
-        run('sudo mkdir /data/zookeeper')
-        run('sudo chown -R zookeeper:zookeeper /data/zookeeper')
+        sudo('mkdir -p /grepdata/zookeeper')
+        sudo('chown -R zookeeper:zookeeper /grepdata/zookeeper')
 
 #################################################################################
 # ZOOKEEPER CODE AND CONFIG SETUP
 #################################################################################
-def install_zookeeper_config(org='ntropy', branch='master'):
-    install_code()
-    checkout_branch(branch)
-
+def install_zookeeper_config(org='ntropy'):
     install_zoo_data_dir()
-    install_zoo_cfg(org=org, branch=branch, checkout=False)
     install_zoo_log_dir()
-    install_zkEnv(org=org, branch=branch, checkout=False)
+    install_zkEnv()
+    install_zoo_cfg(org=org)
     install_bashrc(service_type='zookeeper')
-    install_monit_config(service='zookeeper')
+    install_monitoring_config(service='zookeeper')
 
 def install_zoo_data_dir():
-    run('sudo mkdir -p /mnt/data/zookeeper')
-    run('sudo chown -R zookeeper:zookeeper /mnt/data/zookeeper')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('mkdir -p /grepdata/zookeeper')
+        sudo('chown -R zookeeper:zookeeper /grepdata/zookeeper')
 
 def install_zoo_log_dir():
-    run('sudo mkdir -p /var/log/zookeeper')
-    run('sudo chown -R zookeeper:zookeeper /var/log/zookeeper')
-
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('mkdir -p /var/log/zookeeper')
+        sudo('chown -R zookeeper:zookeeper /var/log/zookeeper')
+        
 def install_zkEnv():
-    sudo('wget https://github.com/premal/config/blob/master/zookeeper/zkEnv.sh -O /usr/lib/zookeeper/bin/zkEnv.sh')
-    sudo('chown zookeeper:zookeeper /usr/lib/zookeeper/bin/zkEnv.sh')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('wget https://github.com/premal/config/raw/master/zookeeper/zkEnv.sh -O /usr/lib/zookeeper/bin/zkEnv.sh')
+        sudo('chown zookeeper:zookeeper /usr/lib/zookeeper/bin/zkEnv.sh')
 
-def install_zoo_cfg():
-    sudo('wget https://github.com/premal/config/blob/master/zookeeper/zoo.cfg -O zoo.cfg')
+def install_zoo_cfg(org='ntropy1'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('wget https://github.com/premal/config/raw/master/zookeeper/zoo.cfg -O zoo.cfg')
 
-    zkInstances = aws.get_instances(service_type='zookeeper', org=org, state='running')
-    zkServers = '\n'.join(['server.%s=%s:2888:3888' %(''.join(re.findall(r'\d+', x.ip_address)), x.public_dns_name) for x in zkInstances])
-    code_lines = ["f = open('zoo.cfg').read()" ,
-                  "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
-                  "f = open('/usr/lib/zookeeper/conf/zoo.cfg', 'w')",
-                  "f.write(out)",
-                  "f.close()"
-    ]
-    sudo('python -c "%s"' %'; '.join(code_lines), user='zookeeper')
+        zkInstances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+        zkServers = '\n'.join(['server.%s=%s:2888:3888' %(''.join(re.findall(r'\d+', x.ip_address)), x.public_dns_name) for x in zkInstances])
 
-    zkInstances = aws.get_instances(service_type='zookeeper', org=org, state='running')
-    for instance in zkInstances:
-        print ''.join(re.findall(r'\d+', instance.private_ip_address))
-        if (''.join(re.findall(r'\d+', instance.private_ip_address)) ==
-            run('python -c "import socket, re; print \'\'.join(re.findall(r\'\d+\', socket.gethostbyname(socket.gethostname())))"')):
-            code_lines = ["f = open('/mnt/data/zookeeper/myid', 'w')" ,
-                          "f.write('%s')" %int(''.join(re.findall(r'\d+', instance.ip_address))),
-                          "f.close()"
-            ]
-            run('python -c "%s"' %'; '.join(code_lines), user='zookeeper')
+        # defaults to localhost
+        if not zkServers:
+            zkServers = 'server.1=%s:2888:3888' %run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+
+        code_lines = ["f = open('zoo.cfg').read()" ,
+                      "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
+                      "f = open('/usr/lib/zookeeper/conf/zoo.cfg', 'w')",
+                      "f.write(out)",
+                      "f.close()"]
+        sudo('python -c "%s"' %'; '.join(code_lines), user='zookeeper')
+
+        for instance in zkInstances:
+            print ''.join(re.findall(r'\d+', instance.private_ip_address))
+            if (''.join(re.findall(r'\d+', instance.private_ip_address)) ==
+                run('python -c "import socket, re; print \'\'.join(re.findall(r\'\d+\', socket.gethostbyname(socket.gethostname())))"')):
+                code_lines = ["f = open('/grepdata/zookeeper/myid', 'w')" ,
+                              "f.write('%s')" %int(''.join(re.findall(r'\d+', instance.ip_address))),
+                              "f.close()"]
+                sudo('python -c "%s"' %'; '.join(code_lines), user='zookeeper')
 
 #################################################################################
 # ZOOKEEPER SERVICES
@@ -568,18 +589,18 @@ def start_zookeeper():
     with cd('/usr/lib/zookeeper'):
         run('sudo -u zookeeper bin/zkServer.sh start')
 
-def restart_zookeeper():
-    with cd('/usr/lib/zookeeper'):
-        run('sudo -u zookeeper bin/zkServer.sh restart')
-
 def stop_zookeeper():
     with cd('/usr/lib/zookeeper'):
         run('sudo -u zookeeper bin/zkServer.sh stop')
 
+def restart_zookeeper():
+    with cd('/usr/lib/zookeeper'):
+        run('sudo -u zookeeper bin/zkServer.sh restart')
+
 #################################################################################
 # KAFKA SOFTWARE SETUP
 #################################################################################
-def setup_kafka_server(org='ntropy'):
+def setup_kafka_server():
     install_basic_software()
     install_java()
     install_user('kafka', 'kafka')
@@ -603,26 +624,30 @@ def install_kafka():
         with cd('/usr/lib/kafka'):
             sudo('./sbt update')
             sudo('./sbt package')
+
+        print 'Installed Kafka'
     else:
         print 'Kafka is already installed'
 
-    sudo('mkdir -p /data/kafka')
-    sudo('chown -R kafka:kafka /data/kafka')
+    sudo('mkdir -p /grepdata/kafka')
+    sudo('chown -R kafka:kafka /grepdata/kafka')
+
+    sudo('mkdir -p /var/log/kafka')
+    sudo('chown -R kafka:kafka /var/log/kafka')
 
 #################################################################################
 # KAFKA CODE AND CONFIG SETUP
 #################################################################################
-def install_kafka_config(org='ntropy', branch='master'):
-    install_code()
-    checkout_branch(branch)
-    install_kafka_properties(org=org, branch=branch, checkout=False)
-    install_kafka_daemon(org=org, branch=branch, checkout=False)
-    install_bashrc(service_type='kafka', branch=branch, checkout=False)
+def install_kafka_config(org='ntropy'):
+    install_kafka_properties(org=org)
+    install_service_config()
+    install_kafka_daemon()
+    install_bashrc(service_type='kafka')
+    install_monitoring_config(service='kafka')
 
-def install_kafka_properties(org='ntropy', branch='master', checkout=True):
-    if checkout:
-        install_code()
-        checkout_branch(branch)
+def install_kafka_properties(org='ntropy'):
+    public_ip = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+    instance_id = 1
 
     kInstances = aws.get_instances(service_type='kafka', org=org, state='running')
     for instance in kInstances:
@@ -633,67 +658,42 @@ def install_kafka_properties(org='ntropy', branch='master', checkout=True):
 
     instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
     zkServers = ','.join(['%s:2181' %x.public_dns_name for x in instances])
+
+    # defaults to localhost
+    if not zkServers:
+        zkServers = '%s:2181' %public_ip
+
     zk_code_lines = ["f = open('server.properties').read()",
                      "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS','%s')" %zkServers,
                      "out = out.replace('REPLACE_WITH_EXTERNAL_IP','%s')" %public_ip,
                      "f = open('/usr/lib/kafka/config/server.properties', 'w')",
                      "f.write(out)",
-                     "f.close()"
-    ]
+                     "f.close()"]
 
-    bk_code_lines = ["f = open('server.properties').read()",
+    bk_code_lines = ["f = open('/usr/lib/kafka/config/server.properties').read()",
                      "out = f.replace('REPLACE_WITH_BROKER_ID','%s')" %instance_id,
                      "f = open('/usr/lib/kafka/config/server.properties', 'w')",
                      "f.write(out)",
-                     "f.close()"
-    ]
+                     "f.close()"]
 
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /usr/lib/kafka/config/server.properties.default')
+    sudo('wget https://github.com/premal/config/raw/master/kafka/server.properties -O server.properties')
+    sudo('python -c "%s"' %'; '.join(zk_code_lines))
+    sudo('python -c "%s"' %'; '.join(bk_code_lines))
+    sudo('chown kafka:kafka /usr/lib/kafka/config/server.properties')
 
-    if result.failed:
-        with cd('/var/ntropy/conf/kafka'):
-            run('sudo -u kafka python -c "%s"' %'; '.join(zk_code_lines))
-        with cd('/usr/lib/kafka/config/'):
-            run('sudo -u kafka python -c "%s"' %'; '.join(bk_code_lines))
-            run('sudo -u kafka cp /var/ntropy/conf/kafka/server.properties server.properties.default')
-    else:
-        #with cd('/usr/lib/kafka/config'):
-        with cd('/var/ntropy/conf/kafka'):
-            run('sudo -u kafka python -c "%s"' %'; '.join(zk_code_lines))
-        with cd('/usr/lib/kafka/config/'):
-            run('sudo -u kafka python -c "%s"' %'; '.join(bk_code_lines))
+def install_kafka_daemon():
+    sudo('wget https://github.com/premal/config/raw/master/kafka/init.d -O /etc/init.d/kafka')
+    sudo('chmod +x /etc/init.d/kafka')
 
-def install_kafka_daemon(org='ntropy', branch='master', checkout=True):
-    if checkout:
-        install_code()
-        checkout_branch(branch)
-
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /etc/init.d/kafka')
-
-    if result.failed:
-        run('sudo cp /var/ntropy/conf/kafka/init.d /etc/init.d/kafka')
-        run('sudo chmod +x /etc/init.d/kafka')
-
-    run('sudo cp /var/ntropy/conf/kafka/kafka-server-stop.sh /usr/lib/kafka/bin/kafka-server-stop.sh')
-    run('sudo cp /var/ntropy/conf/kafka/rc.local /etc/init.d/rc.local')
-
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /var/log/kafka')
-
-    if result.failed:
-        run('sudo mkdir /var/log/kafka')
-        run('sudo chown kafka:kafka /var/log/kafka')
+    #sudo('cp /var/ntropy/conf/kafka/kafka-server-stop.sh /usr/lib/kafka/bin/kafka-server-stop.sh')
+    #sudo('cp /var/ntropy/conf/kafka/rc.local /etc/init.d/rc.local')
 
 #################################################################################
 # KAFKA SERVICES
 #################################################################################
 # TODO figure out start kafka in background mode
 def start_kafka():
-    #run('sudo /etc/init.d/kafka start')
-    with cd('/usr/lib/kafka'):
-        run('nohup sh -c "sudo -u kafka service kafka start &"')
+    run('nohup sh -c "sudo -u kafka /etc/init.d/kafka start &"')
 
 def stop_kafka():
     run('sudo /etc/init.d/kafka stop')
@@ -715,8 +715,8 @@ def setup_storm_server(org='ntropy'):
     install_storm()
 
 def install_storm_essentials():
-    run('sudo apt-get update')
-    run('sudo apt-get install -y git unzip build-essential pkg-config libtool autoconf uuid-dev')
+    sudo('apt-get update')
+    sudo('apt-get install -y git unzip build-essential pkg-config libtool autoconf uuid-dev')
 
 def install_zeromq():
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
@@ -724,15 +724,15 @@ def install_zeromq():
 
     if result.failed:
         run('wget http://download.zeromq.org/zeromq-2.1.7.tar.gz')
-        run('sudo mv zeromq-2.1.7.tar.gz /usr/lib/')
+        sudo('mv zeromq-2.1.7.tar.gz /usr/lib/')
         with cd('/usr/lib'):
-            run('sudo tar xzf zeromq-2.1.7.tar.gz')
+            sudo('tar xzf zeromq-2.1.7.tar.gz')
             sudo('rm zeromq-2.1.7.tar.gz')
-            run('sudo ln -s zeromq-2.1.7 zeromq')
+            sudo('ln -s zeromq-2.1.7 zeromq')
         with cd('/usr/lib/zeromq'):
-            run('sudo ./configure')
-            run('sudo make')
-            run('sudo make install')
+            sudo('./configure')
+            sudo('make')
+            sudo('make install')
     else:
         print 'ZeroMQ is already installed'
 
@@ -748,10 +748,10 @@ def install_jzmq():
             sudo('CLASSPATH=.:./.:$CLASSPATH javac -d . org/zeromq/ZMQ.java org/zeromq/ZMQException.java org/zeromq/ZMQQueue.java org/zeromq/ZMQForwarder.java org/zeromq/ZMQStreamer.java')
         with cd ('jzmq'):
             put('/home/premal/dev/ntropy/conf/storm/environment', '/etc/environment', use_sudo=True)
-            run('sudo ./autogen.sh')
-            run('sudo ./configure')
-            run('sudo make')
-            run('sudo make install')
+            sudo('./autogen.sh')
+            sudo('./configure')
+            sudo('make')
+            sudo('make install')
             run('touch done.log')
     else:
         print 'JZMQ is already installed'
@@ -761,85 +761,68 @@ def install_storm():
         result = run('ls -l /usr/lib/storm')
 
     if result.failed:
-        run('wget https://s3.amazonaws.com/bootstrap-software/storm-0.9.0-wip15.zip -O storm-0.9.0-wip15.zip')
-        run('sudo mv storm-0.9.0-wip15.zip /usr/lib/')
+        run('wget https://s3.amazonaws.com/bootstrap-software/storm-0.9.0-wip16.zip -O storm-0.9.0-wip16.zip')
+        sudo('mv storm-0.9.0-wip16.zip /usr/lib/')
         with cd('/usr/lib'):
-            run('sudo unzip storm-0.9.0-wip15.zip')
-            run('sudo rm storm-0.9.0-wip15.zip')
-            run('sudo ln -s storm-0.9.0-wip15 storm')
-            run('sudo chown -R storm:storm /usr/lib/storm/')
-            run('sudo chown -R storm:storm /usr/lib/storm')
-
-        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-            run('sudo mkdir /data')
-        run('sudo mkdir /data/storm')
-        run('sudo chown -R storm:storm /data/storm')
+            sudo('unzip storm-0.9.0-wip16.zip')
+            sudo('rm storm-0.9.0-wip16.zip')
+            sudo('ln -s storm-0.9.0-wip15 storm')
+            sudo('chown -R storm:storm /usr/lib/storm/')
+            sudo('chown -R storm:storm /usr/lib/storm')
     else:
         print 'Storm is already installed'
+
+    sudo('mkdir -p /grepdata/storm')
+    sudo('chown -R storm:storm /grepdata/storm')
 
 #################################################################################
 # STORM CODE AND CONFIG SETUP
 #################################################################################
-def install_storm_code_config(org='ntropy', branch='master'):
-    install_code()
-    checkout_branch(branch)
-    install_storm_code(branch=branch, org=org, checkout=False)
-    install_storm_config(branch=branch, org=org, checkout=False)
-    install_storm_daemon(branch=branch, org=org, checkout=False)
-    install_service_config(branch=branch, checkout=False)
+def install_storm_code_config(org='ntropy'):
+    install_storm_config(org=org)
+    install_storm_daemon(org=org)
+    install_service_config()
     install_bashrc(service_type='storm')
     install_storm_symlinks()
+    install_monitoring_config('storm', 'nimbus')
+    install_monitoring_config('storm', 'ui')
+    install_monitoring_config('storm', 'supervisor')
 
-def install_storm_code(org='ntropy', branch='master', checkout=True):
-    if checkout:
-        install_code()
-        checkout_branch(branch)
-
-def install_storm_config(org='ntropy', branch='master', checkout=True):
-    if checkout:
-        install_code()
-        checkout_branch(branch)
-
-    with cd('/usr/lib/storm'):
-        instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
-        zkServers = '\n     - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
-        storm_master = aws.get_instances(service_type='storm', org=org, state='running', master=True)[0]
-        code_lines = ["f = open('storm.yaml').read()",
-                      "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
-                      "out = out.replace('REPLACE_WITH_NIMBUS_SERVER', '%s')" %storm_master.public_dns_name,
-                      "f = open('/usr/lib/storm/conf/storm.yaml', 'w')",
-                      "f.write(out)",
-                      "f.close()"
-        ]
-        with cd('/var/ntropy/conf/storm'):
-            run('sudo -u storm python -c "%s"' %'; '.join(code_lines))
-
-def install_storm_daemon(org='ntropy', branch='master', checkout=True):
-    if checkout:
-        install_code()
-        checkout_branch(branch)
-
+def install_storm_config(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /etc/init.d/storm')
+        run('wget https://github.com/premal/config/raw/master/storm/storm.yaml -O storm.yaml')
 
-    if result.failed:
-        run('sudo cp /var/ntropy/conf/storm/init.d /etc/init.d/storm')
-        run('sudo chmod +x /etc/init.d/storm')
+    instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+    zkServers = '\n     - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
 
-    sInstances = aws.get_instances(service_type='storm', org=org, state='running')
-    for instance in sInstances:
-        if (''.join(re.findall(r'\d+', instance.private_ip_address)) ==
-            run('python -c "import socket, re; print \'\'.join(re.findall(r\'\d+\', socket.gethostbyname(socket.gethostname())))"')):
-            if instance.tags.get('Name2').endswith('master'):
-                run('sudo cp /var/ntropy/conf/storm/rc.local.master /etc/init.d/rc.local')
-            elif instance.tags.get('Name2').endswith('slave'):
-                run('sudo cp /var/ntropy/conf/storm/rc.local.slave /etc/init.d/rc.local')
+    # default to localhost
+    zkServers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+
+    try:
+        public_dns_name = aws.get_instances(service_type='storm', org=org, state='running', master=True)[0].public_dns_name
+    except IndexError:
+        public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+
+    code_lines = ["f = open('storm.yaml').read()",
+                  "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
+                  "out = out.replace('REPLACE_WITH_NIMBUS_SERVER', '%s')" %public_dns_name,
+                  "f = open('/usr/lib/storm/conf/storm.yaml', 'w')",
+                  "f.write(out)",
+                  "f.close()"]
+    
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('python -c "%s"' %'; '.join(code_lines), user='storm')
+
+def install_storm_daemon(org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('wget https://github.com/premal/config/raw/master/storm/init.d -O /etc/init.d/storm')
+        sudo('chmod +x /etc/init.d/storm')
 
 def install_storm_symlinks():
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        sudo('ln -s /usr/lib/storm/logs /var/log/storm', user='root')
+        sudo('ln -s /usr/lib/storm/logs/ /var/log/storm')
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        sudo('ln -s /usr/lib/storm/conf /etc/storm-conf', user='root')
+        sudo('ln -s /usr/lib/storm/conf /etc/storm-conf')
 
 #################################################################################
 # STORM SERVICES
@@ -970,20 +953,15 @@ def install_hadoop():
     install_hdfs_dirs()
         
 def install_hdfs_dirs():
-    with settings(hide('warnings', 'stdout', 'stderr'), warn_only=True):
-        run('sudo mkdir -p /mnt/name')
-    run('sudo chown -R hadoop:hadoop /mnt/name/')
+    run('sudo mkdir -p /grepdata/hadoop/name')
+    run('sudo chown -R hadoop:hadoop /grepdata/hadoop/name/')
 
-    with settings(hide('warnings', 'stdout', 'stderr'), warn_only=True):
-        run('sudo mkdir -p /mnt/name')
-    run('sudo chown -R hadoop:hadoop /mnt/')
+    run('sudo mkdir -p /grepdata/hadoop/name')
+    run('sudo chown -R hadoop:hadoop /grepdata/hadoop/')
 
-    with settings(hide('warnings', 'stdout', 'stderr'), warn_only=True):
-        run('sudo mkdir -p /hdfs/volume1')
-    with settings(hide('warnings', 'stdout', 'stderr'), warn_only=True):
-        run('sudo mkdir -p /hdfs/volume1/data')
-    with settings(hide('warnings', 'stdout', 'stderr'), warn_only=True):
-        run('sudo mkdir -p /hdfs/volume1/name')
+    run('sudo mkdir -p /hdfs/volume1')
+    run('sudo mkdir -p /hdfs/volume1/data')
+    run('sudo mkdir -p /hdfs/volume1/name')
     run('sudo chown -R hadoop:hadoop /hdfs/')
 
 def install_lzo():
@@ -1050,16 +1028,10 @@ def install_hbase():
     else:
         print 'HBase is already installed'
 
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /data/hbase')
-
-    if result.failed:
-        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-            run('sudo mkdir /data')
-        run('sudo mkdir /data/hbase')
-        run('sudo mkdir /data/hbase/tmp')
-        run('sudo mkdir /data/hbase/local')
-        run('sudo chown -R hbase:hbase /data/hbase')
+    run('sudo mkdir -p /grepdata/hbase')
+    run('sudo mkdir -p /grepdata/hbase/tmp')
+    run('sudo mkdir -p /grepdata/hbase/local')
+    run('sudo chown -R hbase:hbase /grepdata/hbase')
 
 def install_hbase_symlinks():
     sudo('ln -s /usr/lib/hbase/logs /var/log/hbase')

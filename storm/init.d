@@ -1,3 +1,5 @@
+#!/bin/sh
+
 USAGE ()
 {
   echo "Usage: $NAME {nimbus|supervisor|ui} {start|stop}" >&2

@@ -1,0 +1,7 @@
+check process namenode
+    matching "namenode"
+    start program = "/usr/lib/hadoop/bin/hadoop-daemon.sh start namenode"
+    stop program = "/usr/lib/hadoop/bin/hadoop-daemon.sh stop namenode"
+    if 5 restarts within 5 cycles then timeout
+    alert premal@grepdata.com
+

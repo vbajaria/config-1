@@ -7,6 +7,20 @@ env.user = 'ubuntu'
 env.key_filename = ['%s/.ssh/Ntropy1.pem' %HOME]
 
 #################################################################################
+# ENV.HOSTS
+#################################################################################
+def get_hosts(org='ntropy', service_type=None, state=None, master=False, slave=False, remote=True):
+    if remote:
+        return [x.public_dns_name for x in aws.get_instances(
+            service_type=service_type, org=org, state=state, master=master, slave=slave)]
+    else:
+        return ['localhost']
+
+def set_hosts(org='ntropy', service_type=None, state='running', master=False, slave=False, remote=True):
+    env.hosts = get_hosts(org=org, service_type=service_type, state=state, master=master, slave=slave, remote=remote)
+    print env.hosts
+
+#################################################################################
 # PUSH DATA
 #################################################################################
 def install_push_script():
@@ -47,9 +61,6 @@ def install_basic_software():
 
         install_ganglia_slave()
 
-        #print 'Installing git access key'        
-        #install_git_access()
-
         print 'Installing ssh config'
         install_ssh_config()
 
@@ -64,7 +75,7 @@ def install_etc_hosts(org='ntropy'):
         result = run('ls -l etc_hosts')
 
     if result.failed:
-        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        with settings(hide('warnings', 'running', 'stdout', 'stderr')):
             run('wget https://raw.github.com/premal/config/master/etc_hosts -O etc_hosts')
             print 'Downloaded hosts file'
 
@@ -78,9 +89,9 @@ def install_etc_hosts(org='ntropy'):
                   "f.write(out)",
                   "f.close()"]
 
-    print 'Updating /etc/hosts'
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         sudo('python -c "%s"' %'; '.join(code_lines))
+        print 'Updated hosts file'
 
 #################################################################################
 # SERVICE CONFIG
@@ -90,22 +101,24 @@ def install_service_config():
         result = run('ls -l /etc/init.d/service_config.sh')
 
     if result.failed:
-        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        with settings(hide('warnings', 'running', 'stdout', 'stderr')):
             sudo('wget https://raw.github.com/premal/config/master/service_config.sh -O /etc/init.d/service_config.sh')
-            install_daemon_dirs()
+
+    install_daemon_dirs()
 
 def install_daemon_dirs():
-    sudo('mkdir -p /var/log/service')
-    sudo('chmod 777 -R /var/log/service/')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        sudo('mkdir -p /var/log/service')
+        sudo('chmod 777 -R /var/log/service/')
 
-    sudo('mkdir -p /var/service/pids')
-    sudo('chmod 777 -R /var/service/pids/')
+        sudo('mkdir -p /var/service/pids')
+        sudo('chmod 777 -R /var/service/pids/')
 
 #################################################################################
 # INIT.D
 #################################################################################
 def install_initd(service):
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         sudo('wget https://github.com/premal/config/raw/master/%s/init.d -O /etc/init.d/%s' %(service, service))
         sudo('chmod a+x /etc/init.d/%s' %service)
         print 'Installed startup script'
@@ -118,15 +131,18 @@ def install_user(username, password):
         result = run(' grep "^%s:" /etc/passwd' %username)
 
     if result.failed:
-        print 'Creating user: (%s) in group: (%s)' %(username, username)
+        with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         run('sudo addgroup %s' %username)
         run('sudo useradd %s -g %s -m -s /bin/bash -p `mkpasswd %s`' %(username, username, password))
+        print 'Created user: (%s) in group: (%s)' %(username, username)
 
 #################################################################################
 # MONIT
 #################################################################################
 def install_monit():
-    run('sudo apt-get install -y monit')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        run('sudo apt-get install -y monit')
+        print 'Installed monit'
 
 #################################################################################
 # UPDATE CONFIG
@@ -154,120 +170,10 @@ def install_bashrc(service_type):
     run('source /home/ubuntu/.bashrc')
 
 #################################################################################
-# ENV.HOSTS
-#################################################################################
-def get_hosts(org='ntropy', service_type=None, state=None, master=False, slave=False, remote=True):
-    if remote:
-        return [x.public_dns_name for x in aws.get_instances(
-            service_type=service_type, org=org, state=state, master=master, slave=slave)]
-    else:
-        return ['localhost']
-
-def set_hosts(org='ntropy', service_type=None, state='running', master=False, slave=False, remote=True):
-    env.hosts = get_hosts(org=org, service_type=service_type, state=state, master=master, slave=slave, remote=remote)
-    print env.hosts
-
-#################################################################################
-# GANGLIA SOFTWARE
-#################################################################################
-def install_ganglia_dependencies():
-    sudo('apt-get -y install build-essential libapr1-dev libconfuse-dev libexpat1-dev python-dev')
-
-def install_ganglia_master():
-    install_ganglia_dependencies()
-    sudo('apt-get -y install ganglia-monitor ganglia-webfrontend gmetad')
-    install_ganglia_rrd_dir()
-
-def install_ganglia_slave():
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        print 'Installing ganglia'
-        install_ganglia_dependencies()
-        sudo('apt-get -y install ganglia-monitor')
-        install_ganglia_rrd_dir()
-
-def install_ganglia_rrd_dir():
-    sudo('mkdir -p /var/lib/ganglia/rrds')
-    sudo('chown -R ganglia:ganglia /var/lib/ganglia/')
-
-#################################################################################
-# GANGLIA CONFIG
-#################################################################################
-def install_ganglia_master_gmetad_config(service_type, org='ntropy', branch='develop', checkout=True):
-    if checkout:
-        install_code()
-        checkout_branch(branch)
-
-    sudo('cp /var/ntropy/conf/ganglia/%s-gmetad-conf /etc/ganglia/gmetad.conf' %service_type)
-
-def install_ganglia_master_gmond_config(service_type, org='ntropy', branch='develop', checkout=True):
-    if checkout:
-        install_code()
-        checkout_branch(branch)
-
-    sudo('cp /var/ntropy/conf/ganglia/%s-master-gmond.conf /etc/ganglia/gmond.conf' %service_type)
-
-def install_ganglia_slave_gmond_config(service_type, org='ntropy', branch='develop', checkout=True):
-    if checkout:
-        install_code()
-        checkout_branch(branch)
-
-    master = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0]
-    hInstances = aws.get_instances(service_type='hbase', org=org, state='running', slave=True)
-    for instance in hInstances:
-        if (''.join(re.findall(r'\d+', instance.private_ip_address)) ==
-            run('python -c "import socket, re; print \'\'.join(re.findall(r\'\d+\', socket.gethostbyname(socket.gethostname())))"')):
-            code_lines = ["f = open('%s-slave-gmond.conf').read()" %service_type,
-                          "out = f.replace('REPLACE_WITH_SLAVE_LOCATION', '%s')" %''.join(re.findall(r'\d+', instance.ip_address)),
-                          "out = out.replace('REPLACE_WITH_MASTER', '%s')" %master.public_dns_name,
-                          "f = open('/etc/ganglia/gmond.conf', 'w')",
-                          "f.write(out)",
-                          "f.close()"
-            ]
-
-            with cd('/var/ntropy/conf/ganglia'):
-                run('sudo python -c "%s"' %'; '.join(code_lines))
-
-#################################################################################
-# GANGLIA SERVICE
-#################################################################################
-def start_ganglia_master():
-    sudo('/etc/init.d/gmetad start')
-    sudo('/etc/init.d/ganglia-monitor start')
-
-def start_ganglia_slave():
-    sudo('/etc/init.d/ganglia-monitor start')
-
-def stop_ganglia_master():
-    sudo('/etc/init.d/gmetad stop')
-    sudo('/etc/init.d/ganglia-monitor stop')
-
-def stop_ganglia_slave():
-    sudo('/etc/init.d/ganglia-monitor stop')
-
-def restart_ganglia_master():
-    start_ganglia_master()
-    start_ganglia_slave()
-
-def restart_ganglia_slave():
-    stop_ganglia_master()
-    stop_ganglia_slave()
-
-#################################################################################
-# GANGLIA DISK STATS
-#################################################################################
-def install_ganglia_disk_stats():
-    sudo('mkdir -p /usr/lib/ganglia/python_modules')
-    with cd('/usr/lib/ganglia/python_modules'):
-        sudo('wget https://raw.github.com/ganglia/gmond_python_modules/master/diskstat/python_modules/diskstat.py -O diskstat.py')
-
-def run_ganglia_disk_stats():
-    sudo ('nohup sh -c "python /usr/lib/ganglia/python_modules/diskstat.py -g &"')
-
-#################################################################################
 # SECURITY LIMITS
 #################################################################################
 def install_security_limits(user, org='ntropy'):
-    run('wget https://raw.github.com/premal/config/master/update_config.py -O /home/ubuntu/update_config.py')
+    install_update_config()
 
     security_map = dict(
         storm = dict(
@@ -503,6 +409,116 @@ def restart_beacon_server(service_type):
     stop_beacon_server(service_type)
     start_beacon_server(service_type)
 
+#################################################################################
+# API SERVER SOFTWARE
+#################################################################################
+def setup_api_server(org='ntropy'):
+    install_basic_software()
+    install_java()
+
+#################################################################################
+# API SERVERS CODE AND CONFIG SETUP
+#################################################################################
+def install_api_code_config(org='ntropy'):
+    install_api_jar()
+    install_api_config()
+
+    if org in ['ntropy', 'grepdata']:
+        install_api_https_cert()
+
+    install_service_config()
+    install_initd(service='api')
+    install_monitoring_config(service='api')
+    install_etc_hosts(org=org)
+
+def install_api_jar():
+    install_key()
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        run('scp -i Ntropy1.pem kickstart.grepdata.com:/var/ntropy/dataapi/target/dataapi-0.1.jar .')
+        sudo('mkdir -p /usr/lib/api')
+        sudo('cp dataapi-0.1.jar /usr/lib/api/dataapi-0.1.jar')
+        print 'Installed JAR'
+
+    delete_key()
+
+def install_api_config(org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sudo('mkdir -p /usr/lib/api')
+        sudo('wget https://github.com/premal/config/raw/master/api/api-dev-config.yml -O /usr/lib/api/api-dev-config.yml')
+
+        instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+        zkServers = '\n            - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
+
+        if not instances:
+            # default to localhost
+            zkServers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+
+        for config_file in ['api-prod-config.yml', 'api-prod-https-config.yml']:
+            sudo('wget https://github.com/premal/config/raw/master/api/%s -O %s' %(config_file, config_file))
+            code_lines = ["f = open('%s').read()" %config_file,
+                          "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
+                          "f = open('/usr/lib/api/%s', 'w')" %config_file,
+                          "f.write(out)",
+                          "f.close()"]    
+            sudo('python -c "%s"' %'; '.join(code_lines))
+        print 'Downloaded Configs'
+
+def install_api_https_cert():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        run('wget "%s" -O ~/.ssh/api.keystore' %aws.generate_url('bootstrap-keys', 'api.keystore'))
+        sudo('chmod 400 ~/.ssh/api.keystore')
+    
+#################################################################################
+# API SERVER SERVICES
+#################################################################################
+def _validate_service_type(service_type):
+    if service_type not in ['api-dev', 'api-prod-https']:
+        raise ValueError, "Valid values are api-dev and api-prod-https"
+
+def start_api_server(service_type):
+    _validate_service_type(service_type)
+    sudo('nohup sh -c "/etc/init.d/api %s start &"' %(service_type))
+
+def stop_api_server(service_type):
+    _validate_service_type(service_type)
+    sudo('/etc/init.d/api %s stop' %(service_type))
+
+def restart_api_server(service_type):
+    _validate_service_type(service_type)
+    stop_api_server(service_type)
+    start_api_server(service_type)
+
+#################################################################################
+# FRONTEND SERVER SOFTWARE SETUP
+#################################################################################
+def setup_frontend_server(org='ntropy'):
+    install_nginx()
+    install_django()
+    install_tastypie()
+
+def install_nginx():
+    sudo('apt-get -y install nginx')
+    sudo('apt-get -y install python-flup')
+
+def install_django():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('python -c "import django;"')
+
+    if result.failed:
+        run('wget https://s3.amazonaws.com/bootstrap-software/Django-1.4.3.tar.gz -O Django-1.4.3.tar.gz')
+        run('tar xzf Django-1.4.3.tar.gz')
+        with cd('Django-1.4.3'):
+            run('sudo python setup.py install')
+        run('rm Django-1.4.3.tar.gz')
+        run('sudo rm -rf Django-1.4.3')
+    else:
+        print 'Django is already installed'
+
+def install_tastypie():
+    sudo('apt-get -y install python-pip')
+    sudo('pip install django-tastypie')
+    
 #################################################################################
 # ZOOKEEPER SOFTWARE SETUP
 #################################################################################
@@ -805,7 +821,8 @@ def install_storm_config(org='ntropy'):
     zkServers = '\n     - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
 
     # default to localhost
-    zkServers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+    if not instances:
+        zkServers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
 
     try:
         public_dns_name = aws.get_instances(service_type='storm', org=org, state='running', master=True)[0].public_dns_name
@@ -1025,6 +1042,9 @@ def install_hbase_config(org='ntropy'):
     install_security_limits('hbase', org=org)
     install_bashrc(service_type='hbase')
     install_etc_hosts(org=org)
+    install_hbase_daemon()
+    install_monitoring_config('hbase', 'master')
+    install_monitoring_config('hbase', 'regionserver')
 
 def install_hbase_env(org='ntropy'):
     sudo('wget https://github.com/premal/config/raw/master/hbase/hbase-env.sh -O /usr/lib/hbase/conf/hbase-env.sh')
@@ -1077,6 +1097,9 @@ def install_hbase_metrics(org='ntropy'):
                   "f.close()"]
     sudo('python -c "%s"' %'; '.join(code_lines), user='hbase')
 
+def install_hbase_daemon():
+    sudo('wget https://github.com/premal/config/raw/master/hbase/hbase-daemon.sh -O /usr/lib/hbase/bin/hbase-daemon.sh', user='hbase')
+
 ########################## HDFS ##########################
 def install_hadoop_config(org='ntropy'):
     install_hadoop_env(org=org)
@@ -1085,7 +1108,10 @@ def install_hadoop_config(org='ntropy'):
     install_hdfs_master(org=org)
     install_hdfs_slaves(org=org)
     install_hadoop_metrics(org=org)
+    install_hadoop_daemon()
     install_hadoop_symlinks()
+    install_monitoring_config('hadoop', 'namenode')
+    install_monitoring_config('hadoop', 'datanode')
 
 def install_hadoop_env(org='ntropy'):
     sudo('wget https://github.com/premal/config/raw/master/hadoop/hadoop-env.sh -O /usr/lib/hadoop/conf/hadoop-env.sh', user='hadoop')
@@ -1145,6 +1171,9 @@ def install_hadoop_metrics(org='ntropy'):
                   "f.write(out)",
                   "f.close()"]
     sudo('python -c "%s"' %'; '.join(code_lines), user='hadoop')
+
+def install_hadoop_daemon():
+    sudo('wget https://github.com/premal/config/raw/master/hadoop/hadoop-daemon.sh -O /usr/lib/hadoop/bin/hadoop-daemon.sh', user='hadoop')
 
 def install_hadoop_symlinks():
     sudo('ln -s /usr/lib/hadoop/logs /var/log/hadoop')
@@ -1468,4 +1497,101 @@ def install_git_access():
 def install_ssh_config():
     put('/home/premal/ssh_config', '/etc/ssh/ssh_config', use_sudo=True)
     run('sudo service ssh restart')
+
+#################################################################################
+# GANGLIA SOFTWARE
+#################################################################################
+def install_ganglia_dependencies():
+    sudo('apt-get -y install build-essential libapr1-dev libconfuse-dev libexpat1-dev python-dev')
+
+def install_ganglia_master():
+    install_ganglia_dependencies()
+    sudo('apt-get -y install ganglia-monitor ganglia-webfrontend gmetad')
+    install_ganglia_rrd_dir()
+
+def install_ganglia_slave():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        print 'Installing ganglia'
+        install_ganglia_dependencies()
+        sudo('apt-get -y install ganglia-monitor')
+        install_ganglia_rrd_dir()
+
+def install_ganglia_rrd_dir():
+    sudo('mkdir -p /var/lib/ganglia/rrds')
+    sudo('chown -R ganglia:ganglia /var/lib/ganglia/')
+
+#################################################################################
+# GANGLIA CONFIG
+#################################################################################
+def install_ganglia_master_gmetad_config(service_type, org='ntropy', branch='develop', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    sudo('cp /var/ntropy/conf/ganglia/%s-gmetad-conf /etc/ganglia/gmetad.conf' %service_type)
+
+def install_ganglia_master_gmond_config(service_type, org='ntropy', branch='develop', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    sudo('cp /var/ntropy/conf/ganglia/%s-master-gmond.conf /etc/ganglia/gmond.conf' %service_type)
+
+def install_ganglia_slave_gmond_config(service_type, org='ntropy', branch='develop', checkout=True):
+    if checkout:
+        install_code()
+        checkout_branch(branch)
+
+    master = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0]
+    hInstances = aws.get_instances(service_type='hbase', org=org, state='running', slave=True)
+    for instance in hInstances:
+        if (''.join(re.findall(r'\d+', instance.private_ip_address)) ==
+            run('python -c "import socket, re; print \'\'.join(re.findall(r\'\d+\', socket.gethostbyname(socket.gethostname())))"')):
+            code_lines = ["f = open('%s-slave-gmond.conf').read()" %service_type,
+                          "out = f.replace('REPLACE_WITH_SLAVE_LOCATION', '%s')" %''.join(re.findall(r'\d+', instance.ip_address)),
+                          "out = out.replace('REPLACE_WITH_MASTER', '%s')" %master.public_dns_name,
+                          "f = open('/etc/ganglia/gmond.conf', 'w')",
+                          "f.write(out)",
+                          "f.close()"
+            ]
+
+            with cd('/var/ntropy/conf/ganglia'):
+                run('sudo python -c "%s"' %'; '.join(code_lines))
+
+#################################################################################
+# GANGLIA SERVICE
+#################################################################################
+def start_ganglia_master():
+    sudo('/etc/init.d/gmetad start')
+    sudo('/etc/init.d/ganglia-monitor start')
+
+def start_ganglia_slave():
+    sudo('/etc/init.d/ganglia-monitor start')
+
+def stop_ganglia_master():
+    sudo('/etc/init.d/gmetad stop')
+    sudo('/etc/init.d/ganglia-monitor stop')
+
+def stop_ganglia_slave():
+    sudo('/etc/init.d/ganglia-monitor stop')
+
+def restart_ganglia_master():
+    start_ganglia_master()
+    start_ganglia_slave()
+
+def restart_ganglia_slave():
+    stop_ganglia_master()
+    stop_ganglia_slave()
+
+#################################################################################
+# GANGLIA DISK STATS
+#################################################################################
+def install_ganglia_disk_stats():
+    sudo('mkdir -p /usr/lib/ganglia/python_modules')
+    with cd('/usr/lib/ganglia/python_modules'):
+        sudo('wget https://raw.github.com/ganglia/gmond_python_modules/master/diskstat/python_modules/diskstat.py -O diskstat.py')
+
+def run_ganglia_disk_stats():
+    sudo ('nohup sh -c "python /usr/lib/ganglia/python_modules/diskstat.py -g &"')
+
 

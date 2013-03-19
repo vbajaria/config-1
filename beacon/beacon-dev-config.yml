@@ -13,8 +13,8 @@ hbase:
     instrumented: no
 
 http:
-    port: 9080
-    adminPort: 9081
+    port: 6070
+    adminPort: 6071
     connectorType: nonblocking
     requestLog:
         console:

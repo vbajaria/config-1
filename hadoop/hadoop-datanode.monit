@@ -1,7 +1,6 @@
-check process datanode
-    matching "datanode"
-    start program = "/usr/lib/hadoop/bin/hadoop-daemon.sh start datanode"
-    stop program = "/usr/lib/hadoop/bin/hadoop-daemon.sh stop datanode"
+check process datanode with pidfile "/tmp/hadoop-hadoop-datanode"
+    start program = "/usr/lib/hadoop/bin/hadoop-daemon.sh start datanode" as uid hadoop and gid hadoop
+    stop program = "/usr/lib/hadoop/bin/hadoop-daemon.sh stop datanode" as uid hadoop and gid hadoop
     if 2 restarts within 4 cycles then timeout
     alert premal@grepdata.com
 

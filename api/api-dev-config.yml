@@ -15,12 +15,9 @@ hbase:
     instrumented: no
 
 http:
-    port: 8080
-    adminPort: 8081
-    connectorType: nonblocking+ssl
-    ssl:
-        keyStore: /home/ubuntu/.ssh/api.keystore
-        keyStorePassword: gd3333
+    port: 7070
+    adminPort: 7071
+    connectorType: nonblocking
     requestLog:
         console:
             enabled: false

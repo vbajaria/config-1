@@ -1,0 +1,8 @@
+check process api with pidfile /var/service/pids/dev.pid
+    start program = "/etc/init.d/api dev start"
+    stop program = "/etc/init.d/api dev stop"
+    #if failed host localhost port 9081 protocol http then restart
+    if cpu usage is greater than 60 percent for 2 cycles then alert
+    #if 5 restarts within 5 cycles then timeout
+    alert alerts@grepdata.com
+

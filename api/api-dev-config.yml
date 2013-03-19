@@ -1,0 +1,70 @@
+hbase:
+    zookeeper:
+        hosts:
+            - ec2-23-20-150-218.compute-1.amazonaws.com
+            - ec2-54-242-112-85.compute-1.amazonaws.com
+            - ec2-50-16-151-110.compute-1.amazonaws.com
+        port: 2181
+        connectionTimeout: 10s
+        sessionTimeout: 10s
+        namespace: "/hbase"
+    flushInterval: 6s
+    incrementBufferSize: 256KB
+    maxConcurrentRequests: 1000
+    connectionTimeout: 10s
+    instrumented: no
+
+http:
+    port: 8080
+    adminPort: 8081
+    connectorType: nonblocking+ssl
+    ssl:
+        keyStore: /home/ubuntu/.ssh/api.keystore
+        keyStorePassword: gd3333
+    requestLog:
+        console:
+            enabled: false
+        file:
+            enabled: true
+            currentLogFilename: ./logs/app.log
+            archive: true
+            archivedLogFilenamePattern: ./logs/app-%d.log.gz
+            archivedFileCount: 5
+
+mysql:
+    driverClass: com.mysql.jdbc.Driver
+    user: ntropy
+    password: 2bc869f70e28759f57561b5303f4883c
+    url: jdbc:mysql://54.235.120.143/ntropy
+    maxWaitForConnection: 1s
+    validationQuery: "/* MyService Health Check */ SELECT distinct 1 FROM metadata_organization"
+    minSize: 8
+    maxSize: 32
+    checkConnectionWhileIdle: false
+    checkConnectionHealthWhenIdleFor: 10s
+    closeConnectionIfIdleFor: 1 minute
+
+authenticationCachePolicy: maximumSize=10000, expireAfterAccess=10m
+
+kafka:
+    zookeeper:
+        hosts:
+            - ec2-23-20-150-218.compute-1.amazonaws.com
+            - ec2-54-242-112-85.compute-1.amazonaws.com
+            - ec2-50-16-151-110.compute-1.amazonaws.com
+        port: 2181
+        connectionTimeout: 10s
+        sessionTimeout: 10s
+        namespace: "/"
+    sendBufferSize: 10KB
+    connectionTimeout: 5000s
+    reconnectInterval: 30000
+    maxMessageSize: 1MB
+    compression: none
+    partitionMissRetries: 3
+    async:
+        queueTime: 5s
+        queueSize: 10000
+        batchSize: 2000
+    serializerClass: kafka.serializer.StringEncoder
+

@@ -2,6 +2,6 @@ check process beacon-dev with pidfile /var/service/pids/beacon-dev.pid
     start program = "/etc/init.d/beacon beacon-dev start" with timeout 45 seconds
     stop program = "/etc/init.d/beacon beacon-dev stop"
     if cpu usage is greater than 60 percent for 2 cycles then alert
-    #if 2 restarts within 4 cycles then timeout
+    if 2 restarts within 4 cycles then timeout
     alert alerts@grepdata.com
 

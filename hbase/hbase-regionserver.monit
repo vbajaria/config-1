@@ -1,7 +1,6 @@
-check process regionserver
-    matching "regionserver"
-    start program = "/usr/lib/hbase/bin/hbase-daemon.sh start regionserver"
-    stop program = "/usr/lib/hbase/bin/hbase-daemon.sh stop regionserver"
+check process hbase-master with pidfile "/tmp/hbase-hbase-regionserver.pid"
+    start program = "/usr/lib/hbase/bin/hbase-daemon.sh start regionserver" as uid hbase and gid hbase
+    stop program = "/usr/lib/hbase/bin/hbase-daemon.sh stop regionserver" as uid hbase and gid hbase
     if 2 restarts within 4 cycles then timeout
     alert premal@grepdata.com
 

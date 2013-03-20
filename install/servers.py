@@ -132,9 +132,9 @@ def install_user(username, password):
 
     if result.failed:
         with settings(hide('warnings', 'running', 'stdout', 'stderr')):
-        run('sudo addgroup %s' %username)
-        run('sudo useradd %s -g %s -m -s /bin/bash -p `mkpasswd %s`' %(username, username, password))
-        print 'Created user: (%s) in group: (%s)' %(username, username)
+            run('sudo addgroup %s' %username)
+            run('sudo useradd %s -g %s -m -s /bin/bash -p `mkpasswd %s`' %(username, username, password))
+            print 'Created user: (%s) in group: (%s)' %(username, username)
 
 #################################################################################
 # MONIT
@@ -223,6 +223,44 @@ def install_security_limits(user, org='ntropy'):
         config.append(str(value.get('value')))
         config_line = '\t'.join(config)
         sudo('python update_config.py /etc/security/limits.conf "%s"' %config_line)
+
+#################################################################################
+# GIT
+#################################################################################
+def checkout_branch(branch):
+    with cd('/var/ntropy'):
+        run('git checkout %s' %branch)
+        run('git pull origin %s' %branch)
+
+def install_code():
+    install_git_access()
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /var/ntropy')
+
+    if result.failed:
+        with cd('/var'):
+            sudo('mkdir -p ntropy')
+            sudo('chown ubuntu:ubuntu ntropy')
+            run('git clone git@github.com:vbajaria/ntropy.git')
+
+    remove_git_access()
+
+def install_git_access():
+    run('wget "%s" -O ~/.ssh/id_rsa' %aws.generate_url('bootstrap-keys', 'id_rsa'))
+    sudo('chmod 600 /home/%s/.ssh/id_rsa' %env.user)
+    run('wget "%s" -O ~/.ssh/id_rsa.pub' %aws.generate_url('bootstrap-keys', 'id_rsa'))
+    sudo('chmod 644 /home/%s/.ssh/id_rsa.pub' %env.user)
+
+def remove_git_access():
+    sudo('rm ~/.ssh/id_rsa*')
+
+#################################################################################
+# SSH
+#################################################################################
+def install_ssh_config():
+    put('/home/premal/ssh_config', '/etc/ssh/ssh_config', use_sudo=True)
+    run('sudo service ssh restart')
 
 #################################################################################
 # KEY MANAGEMENT
@@ -317,31 +355,6 @@ def start_mysql():
 
 def restart_mysql():
     run('sudo /etc/init.d/mysql restart')
-
-#################################################################################
-# DJANGO WEBSERVER SOFTWARE SETUP
-#################################################################################
-def install_mysqldb():
-    run('sudo apt-get -y install python-mysqldb')
-
-def install_nginx():
-    run('sudo apt-get -y install python-flup')
-    # TODO change this to installing from a binary
-    run('sudo apt-get -y install nginx')
-
-def install_django():
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('python -c "import django;"')
-
-    if result.failed:
-        run('wget https://s3.amazonaws.com/bootstrap-software/Django-1.4.3.tar.gz -O Django-1.4.3.tar.gz')
-        run('tar xzf Django-1.4.3.tar.gz')
-        with cd('Django-1.4.3'):
-            run('sudo python setup.py install')
-        run('rm Django-1.4.3.tar.gz')
-        run('sudo rm -rf Django-1.4.3')
-    else:
-        print 'Django is already installed'
 
 #################################################################################
 # BEACON SERVERS SOFTWARE SETUP
@@ -496,6 +509,7 @@ def setup_frontend_server(org='ntropy'):
     install_nginx()
     install_django()
     install_tastypie()
+    install_python_mysqldb()
 
 def install_nginx():
     sudo('apt-get -y install nginx')
@@ -518,7 +532,71 @@ def install_django():
 def install_tastypie():
     sudo('apt-get -y install python-pip')
     sudo('pip install django-tastypie')
+
+def install_python_mysqldb():
+    run('sudo apt-get -y install python-mysqldb')
+
+#################################################################################
+# FRONTEND CONFIG
+#################################################################################
+def install_frontend_config():
+    install_nginx_config()
+    install_sitecustomize()
+    install_django_config()
+    install_django_settings()
+
+def install_nginx_config():
+    run('wget https://github.com/premal/config/raw/master/frontend/nginx.conf -O nginx.conf')
+
+    code_lines = ["f = open('nginx.conf').read()" ,
+                  "out = f.replace('REPLACE_WITH_WORKER_PROCESSES', '4')",
+                  "out = out.replace('REPLACE_WITH_NUM_WORKER_CONNECTIONS', '1024')",
+                  "f = open('/etc/nginx/nginx.conf', 'w')",
+                  "f.write(out)",
+                  "f.close()"]
+    run('sudo python -c "%s"' %'; '.join(code_lines))
+
+def install_sitecustomize():
+    sudo('mkdir -p /var/log/ntropy')
+    sudo('chmod 777 /var/log/ntropy/')
+    run('touch /var/log/ntropy/error.log')
+    sudo('wget https://github.com/premal/config/raw/master/frontend/sitecustomize.py -O /etc/python2.7/sitecustomize.py')
+
+def install_django_config():
+    run('wget https://github.com/premal/config/raw/master/frontend/start_django -O start_django')
+
+    code_lines = ["f = open('start_django').read()", 
+                  "out = f.replace('MAX_CHILDREN', '4')",
+                  "out = out.replace('MAX_SPARE', '4')",
+                  "out = out.replace('MIN_SPARE', '4')",
+                  "f = open('/etc/django/start_django', 'w')",
+                  "f.write(out)",
+                  "f.close()"]
+    sudo('mkdir -p /etc/django')
+    sudo('python -c "%s"' %'; '.join(code_lines))
+    sudo('chmod +x /etc/django/start_django')
+
+def install_django_settings(org='ntropy'):
+    run('wget https://github.com/premal/config/raw/master/frontend/django_settings.py -O django_settings.py')
+
+    mysql_master_ip = aws.get_instances(service_type='mysql', org=org, state='running')[0].private_ip_address
+    code_lines = ["f = open('django_settings.py').read()" ,
+                  "out = f.replace('REPLACE_MYSQL_IP', '%s')" %mysql_master_ip,
+                  "f = open('/var/ntropy/ui/web/server/settings.py', 'w')",
+                  "f.write(out)",
+                  "f.close()"]
+    run('python -c "%s"' %'; '.join(code_lines))
+
+def update_frontend_code(branch='develop'):
+    pass
     
+#################################################################################
+# FRONTEND SERVICES
+#################################################################################
+def frontend_start():
+    sudo('/etc/init.d/nginx restart; sleep 5')
+    sudo('/etc/django/start_django')
+
 #################################################################################
 # ZOOKEEPER SOFTWARE SETUP
 #################################################################################
@@ -1447,56 +1525,6 @@ def create_cluster(org='ntropy', branch='master',
     #create_api_servers(org=org, num_instances=num_api, instance_type=api_instance_type, branch=branch)
     create_storm_servers(org=org, num_instances=num_storm, instance_type=mysql_instance_type, branch=branch)
     create_hbase_servers(org=org, num_instances=num_hbase, instance_type=mysql_instance_type, branch=branch)
-
-
-#################################################################################
-# GIT
-#################################################################################
-def checkout_branch(branch):
-    with cd('/var/ntropy'):
-        run('git checkout %s' %branch)
-        run('git pull origin %s' %branch)
-
-def install_code():
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /var/ntropy')
-
-    if result.failed:
-        run('sudo mkdir /var/ntropy')
-        run('sudo chown ubuntu:ubuntu /var/ntropy')
-
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /var/ntropy/.gitignore')
-
-    if result.failed:
-        with cd('/var'):
-            with settings(hide('warnings', 'running', 'stdout')):
-                run('git clone https://github.com/vbajaria/ntropy.git ntropy')
-
-def install_git_access():
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /home/%s/.ssh/id_rsa' %env.user)
-
-    if result.failed:
-        if env.user == 'ubuntu':
-            put('/home/premal/id_rsa', '/home/%s/.ssh/id_rsa' %env.user)
-            put('/home/premal/id_rsa.pub', '/home/%s/.ssh/id_rsa.pub' %env.user)
-        else:
-            put('/home/premal/.ssh/id_rsa', '/home/%s/.ssh/id_rsa' %env.user)
-            put('/home/premal/.ssh/id_rsa.pub', '/home/%s/.ssh/id_rsa.pub' %env.user)
-        sudo('chmod 600 /home/%s/.ssh/id_rsa' %env.user)
-        sudo('chmod 644 /home/%s/.ssh/id_rsa.pub' %env.user)
-        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-            run('ssh-add')
-
-    #with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-    #    result = run('ls -l /home/%s/.gitconfig' %env.user)
-    #if result.failed:
-    #    put('/home/premal/dev/ntropy/.git/config', '/home/%s/.gitconfig' %env.user)
-
-def install_ssh_config():
-    put('/home/premal/ssh_config', '/etc/ssh/ssh_config', use_sudo=True)
-    run('sudo service ssh restart')
 
 #################################################################################
 # GANGLIA SOFTWARE

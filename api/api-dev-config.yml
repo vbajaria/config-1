@@ -21,10 +21,20 @@ http:
             enabled: false
         file:
             enabled: true
-            currentLogFilename: ./logs/app.log
+            currentLogFilename: /var/log/api/access.log
             archive: true
-            archivedLogFilenamePattern: ./logs/app-%d.log.gz
+            archivedLogFilenamePattern: /var/log/api/access-%d.log.gz
             archivedFileCount: 5
+
+logging:
+    console:
+        enabled: false
+    file:
+        enabled: true
+        currentLogFilename: /var/log/api/error.log
+        archive: true
+        archivedLogFilenamePattern: /var/log/api/error-%d.log.gz
+        archivedFileCount: 5
 
 mysql:
     driverClass: com.mysql.jdbc.Driver

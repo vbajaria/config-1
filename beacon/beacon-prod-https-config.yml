@@ -26,10 +26,20 @@ http:
             enabled: false
         file:
             enabled: true
-            currentLogFilename: ./logs/app-secure.log
+            currentLogFilename: /var/log/beacon/access-https.log
             archive: true
-            archivedLogFilenamePattern: ./logs/app-secure-%d.log.gz
+            archivedLogFilenamePattern: /var/log/beacon/access-https-%d.log.gz
             archivedFileCount: 5
+
+logging:
+    console:
+        enabled: false
+    file:
+        enabled: true
+        currentLogFilename: /var/log/beacon/service-https.log
+        archive: true
+        archivedLogFilenamePattern: /var/log/beacon/service-https-%d.log.gz
+        archivedFileCount: 5
 
 mysql:
     driverClass: com.mysql.jdbc.Driver

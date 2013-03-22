@@ -34,9 +34,9 @@ logging:
         enabled: false
     file:
         enabled: true
-        currentLogFilename: /var/log/api/error-https.log
+        currentLogFilename: /var/log/api/service-https.log
         archive: true
-        archivedLogFilenamePattern: /var/log/api/error-https-%d.log.gz
+        archivedLogFilenamePattern: /var/log/api/service-https-%d.log.gz
         archivedFileCount: 5
 
 mysql:

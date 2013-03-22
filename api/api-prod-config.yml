@@ -31,9 +31,9 @@ logging:
         enabled: false
     file:
         enabled: true
-        currentLogFilename: /var/log/api/error.log
+        currentLogFilename: /var/log/api/service.log
         archive: true
-        archivedLogFilenamePattern: /var/log/api/error-%d.log.gz
+        archivedLogFilenamePattern: /var/log/api/service-%d.log.gz
         archivedFileCount: 5
 
 mysql:

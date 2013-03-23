@@ -6,8 +6,37 @@ HOME = os.getenv('HOME')
 env.user = 'ubuntu'
 env.key_filename = ['%s/.ssh/Ntropy1.pem' %HOME]
 
-def mail():
-    run('echo "Y" | mail -s"TEST" premal@grepdata.com')
+#################################################################################
+# CREATE CLUSTER
+#################################################################################
+def setup_uber_server(org='ntropy'):
+    install_basic_software()
+    setup_mysql_server(basic=False)
+    setup_beacon_server(basic=False)
+    setup_api_server(basic=False)
+    setup_frontend_server(basic=False)
+    setup_zookeeper_server(basic=False)
+    setup_kafka_server(basic=False)
+    setup_storm_server(basic=False)
+    setup_hadoop_server(basic=False)
+    setup_hbase_server(basic=False)
+
+def __validate_environment(environment):
+    if environment not in ['dev', 'prod']:
+        raise ValueError, "Environment can be only dev or prod"
+    
+def install_uber_config(environment, org='ntropy'):
+    __validate_environment(environment)
+
+
+#################################################################################
+# MAIL
+#################################################################################
+def install_mailutils():
+    sudo('apt-get -y install mailutils')
+
+def update_mail_config(hostname):
+    pass
 
 #################################################################################
 # ENV.HOSTS
@@ -45,13 +74,13 @@ def apt_get_update():
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
         print 'Updating apt repo',
         run('sudo apt-get update')
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 def install_apt_sources():
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
         print 'Installing apt-get sources',
         sudo('wget https://raw.github.com/premal/config/master/apt/mkpasswd.sources.list -O /etc/apt/sources.list.d/mkpasswd.sources.list')
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 def install_basic_software():
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
@@ -60,21 +89,21 @@ def install_basic_software():
 
         print 'Installing htop iotop sysstat git mkpasswd ntp locate liblzo2-dev',
         run('sudo apt-get -y install htop iotop sysstat git mkpasswd ntp locate liblzo2-dev')
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
         print 'Installing monit',
         install_monit()
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
         install_ganglia_slave()
 
         print 'Installing ssh config',
         install_ssh_config()
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
         print 'Installing /etc/hosts',
         install_etc_hosts()
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 #################################################################################
 # ETC HOSTS
@@ -87,7 +116,7 @@ def install_etc_hosts(org='ntropy'):
         with settings(hide('warnings', 'running', 'stdout', 'stderr')):
             print 'Downloading hosts file',
             run('wget https://raw.github.com/premal/config/master/etc_hosts -O etc_hosts')
-            print ' .. [DONE]'
+            print '.. [DONE]'
 
     etc_hosts = []
     for instance in aws.get_instances(org=org, state='running'):
@@ -100,9 +129,9 @@ def install_etc_hosts(org='ntropy'):
                   "f.close()"]
 
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
-        print 'Updating hosts file'
+        print 'Updating hosts file',
         sudo('python -c "%s"' %'; '.join(code_lines))
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 #################################################################################
 # SERVICE CONFIG
@@ -130,10 +159,10 @@ def install_daemon_dirs():
 #################################################################################
 def install_initd(service):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
-        print 'Installing startup script'
+        print 'Installing startup script',
         sudo('wget https://github.com/premal/config/raw/master/%s/init.d -O /etc/init.d/%s' %(service, service))
         sudo('chmod a+x /etc/init.d/%s' %service)
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 #################################################################################
 # USER
@@ -155,7 +184,7 @@ def install_monit():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Installing monit'
         run('sudo apt-get install -y monit')
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 #################################################################################
 # UPDATE CONFIG
@@ -258,13 +287,17 @@ def install_security_limits(user, org='ntropy'):
 #################################################################################
 # GIT
 #################################################################################
-def checkout_branch(branch):
+def pull_code(branch):
+    install_git_access()
+
     with cd('/var/ntropy'):
         with settings(hide('warnings', 'running', 'stdout', 'stderr')):
             print 'Checking out branch: %s' %branch,
             run('git checkout %s' %branch)
             run('git pull origin %s' %branch)
-            print ' .. [DONE]'
+            print '.. [DONE]'
+
+    remove_git_access()
 
 def install_code():
     install_git_access()
@@ -279,7 +312,7 @@ def install_code():
                 sudo('mkdir -p ntropy')
                 sudo('chown ubuntu:ubuntu ntropy')
                 run('git clone git@github.com:vbajaria/ntropy.git')
-                print ' .. [DONE]'
+                print '.. [DONE]'
 
     remove_git_access()
 
@@ -322,7 +355,7 @@ def install_monit_config():
         print 'Installing monit configuration',
         sudo('wget https://github.com/premal/config/raw/master/monit/monitrc -O /etc/monit/monitrc')
         sudo('/etc/init.d/monit restart')
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 def install_monitoring_config(service, sub_service=None):
     filename = service
@@ -334,8 +367,20 @@ def install_monitoring_config(service, sub_service=None):
         if sub_service:
             print sub_service,
         sudo('wget https://github.com/premal/config/raw/master/%s/%s.monit -O /etc/monit/conf.d/%s.monit' %(service, filename, filename))
-        sudo('/etc/init.d/monit restart')
-        print ' .. [DONE]'
+        print '.. [DONE]'
+
+#################################################################################
+# MONIT SERVICE
+#################################################################################
+def start_monit():
+    sudo('/etc/init.d/monit start')
+
+def stop_monit():
+    sudo('/etc/init.d/monit stop')
+
+def restart_monit():
+    stop_monit()
+    start_monit()
 
 #################################################################################
 # GANGLIA SOFTWARE
@@ -344,7 +389,7 @@ def install_ganglia_dependencies():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Installing ganglia dependencies',
         sudo('apt-get -y install build-essential libapr1-dev libconfuse-dev libexpat1-dev python-dev')
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 def install_ganglia_master():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
@@ -352,7 +397,7 @@ def install_ganglia_master():
         install_ganglia_dependencies()
         sudo('apt-get -y install ganglia-monitor ganglia-webfrontend gmetad')
         install_ganglia_rrd_dir()
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 def install_ganglia_slave():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
@@ -360,7 +405,7 @@ def install_ganglia_slave():
         install_ganglia_dependencies()
         sudo('apt-get -y install ganglia-monitor')
         install_ganglia_rrd_dir()
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 def install_ganglia_rrd_dir():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
@@ -381,7 +426,7 @@ def install_ganglia_gmetad_config(org='ntropy'):
                       "f.write(out)",
                       "f.close()"]
         sudo('python -c "%s"' %'; '.join(code_lines))
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 def install_ganglia_gmond_config(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
@@ -411,7 +456,7 @@ def install_ganglia_gmond_config(org='ntropy'):
                       "f.close()"]
         sudo('python -c "%s"' %'; '.join(code_lines))
         """
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 #################################################################################
 # GANGLIA SERVICE
@@ -421,26 +466,26 @@ def start_ganglia_master():
         print 'Starting ganglia',
         sudo('/etc/init.d/gmetad start; sleep 2')
         sudo('/etc/init.d/ganglia-monitor start; sleep 2')
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 def start_ganglia_slave():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Starting ganglia',
         sudo('/etc/init.d/ganglia-monitor start; sleep 2')
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 def stop_ganglia_master():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Stopping ganglia',
         sudo('/etc/init.d/gmetad stop')
         sudo('/etc/init.d/ganglia-monitor stop')
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 def stop_ganglia_slave():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Stopping ganglia',
         sudo('/etc/init.d/ganglia-monitor stop')
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 def restart_ganglia_master():
     stop_ganglia_master()
@@ -463,7 +508,7 @@ def run_ganglia_disk_stats():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Stopping ganglia disk stats',
         sudo ('nohup sh -c "python /usr/lib/ganglia/python_modules/diskstat.py -g &"')
-        print ' .. [DONE]'
+        print '.. [DONE]'
 
 #################################################################################
 # JAVA
@@ -519,7 +564,7 @@ def setup_ntropy_database():
 
 def install_mysql_config(org='ntropy', branch='master', checkout=True):
     install_code()
-    checkout_branch(branch)
+    pull_code(branch)
     run('sudo cp /var/ntropy/conf/mysql/mysql-master.my.cnf /etc/mysql/my.cnf')
 
 #################################################################################
@@ -542,62 +587,105 @@ def setup_beacon_server(basic=True):
 #################################################################################
 # BEACON SERVERS CODE AND CONFIG SETUP
 #################################################################################
-def install_beacon_code_config(org='ntropy'):
+def install_beacon_code_config(environment, org='ntropy'):
+    __validate_environment(environment)
+
     install_beacon_jar()
-    install_beacon_config()
+    install_beacon_config(environment)
 
     if org in ['ntropy', 'grepdata']:
         install_beacon_https_cert()
 
     install_service_config()
     install_initd(service='beacon')
-    install_monitoring_config('beacon', 'dev')
+
+    if environment == 'dev':
+        install_monitoring_config('beacon', 'dev')
+    elif environment  == 'prod':
+        install_monitoring_config('beacon', 'prod')
+        install_monitoring_config('beacon', 'prod-https')
+
     install_etc_hosts(org=org)
 
 def install_beacon_jar():
     install_key()
 
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing Code',
         run('scp -i Ntropy1.pem kickstart.grepdata.com:/var/ntropy/dataapi/target/dataapi-0.1.jar .')
         sudo('mkdir -p /usr/lib/beacon')
         sudo('cp dataapi-0.1.jar /usr/lib/beacon/dataapi-0.1.jar')
-        print 'Installed JAR'
+        print '.. [DONE]'
 
-        sudo('mkdir -p /var/log/beacon')
-        sudo('chmod -R 777 /var/log/beacon/')
+        log_dir = '/var/log/beacon'
+        print 'Creating log directory at %s' %log_dir,
+        sudo('mkdir -p %s' %log_dir)
+        sudo('chmod -R 777 %s' %log_dir)
+        print '.. [DONE]'
 
     delete_key()
 
-def install_beacon_config():
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+def install_beacon_config(environment, org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Downloading beacon service configuration files',
         sudo('mkdir -p /usr/lib/beacon')
-        sudo('wget https://github.com/premal/config/raw/master/beacon/beacon-dev-config.yml -O /usr/lib/beacon/beacon-dev-config.yml')
-        sudo('wget https://github.com/premal/config/raw/master/beacon/beacon-prod-config.yml -O /usr/lib/beacon/beacon-prod-config.yml')
-        sudo('wget https://github.com/premal/config/raw/master/beacon/beacon-prod-https-config.yml -O /usr/lib/beacon/beacon-prod-https-config.yml')
-        print 'Downloaded Configs'
+
+        if environment == 'dev':
+            config_files = ['beacon-dev']
+            sudo('wget https://github.com/premal/config/raw/master/beacon/beacon-dev-config.yml -O beacon-dev-config.yml')
+
+            zkServers = 'localhost'
+        elif environment == 'prod':
+            config_files = ['beacon-prod', 'beacon-prod-https']
+            sudo('wget https://github.com/premal/config/raw/master/beacon/beacon-prod-config.yml -O beacon-prod-config.yml')
+            sudo('wget https://github.com/premal/config/raw/master/beacon/beacon-prod-https-config.yml -O beacon-prod-https-config.yml')
+
+            instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+            zkServers = '\n            - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
+
+            if not instances:
+                # default to localhost
+                zkServers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+
+        for config_file in config_files:
+            code_lines = ["f = open('%s-config.yml').read()" %config_file,
+                          "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
+                          "f = open('/usr/lib/beacon/%s-config.yml', 'w')" %config_file,
+                          "f.write(out)",
+                          "f.close()"]    
+            sudo('python -c "%s"' %'; '.join(code_lines))
+        print '.. [DONE]'
 
 def install_beacon_https_cert():
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing beacon certificate',
         run('wget "%s" -O ~/.ssh/beacon.keystore' %aws.generate_url('bootstrap-keys', 'beacon.keystore'))
         sudo('chmod 400 ~/.ssh/beacon.keystore')
+        print '.. [DONE]'
     
 #################################################################################
 # BEACON SERVERS SERVICES
 #################################################################################
-def _validate_service_type(service_type):
+def __validate_beacon_service_type(service_type):
     if service_type not in ['beacon-dev', 'beacon-prod', 'beacon-prod-https']:
         raise ValueError, "Valid values are beacon-dev, beacon-prod and beacon-prod-https"
 
 def start_beacon_server(service_type):
-    _validate_service_type(service_type)
-    sudo('nohup sh -c "/etc/init.d/beacon %s start &"' %(service_type))
+    __validate_beacon_service_type(service_type)
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Starting beacon service',
+        sudo('nohup sh -c "/etc/init.d/beacon %s start &"' %(service_type))
+        print '.. [DONE]'
 
 def stop_beacon_server(service_type):
-    _validate_service_type(service_type)
-    sudo('/etc/init.d/beacon %s stop' %(service_type))
+    __validate_beacon_service_type(service_type)
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Stopping beacon service',
+        sudo('/etc/init.d/beacon %s stop' %(service_type))
+        print '.. [DONE]'
 
 def restart_beacon_server(service_type):
-    _validate_service_type(service_type)
+    __validate_beacon_service_type(service_type)
     stop_beacon_server(service_type)
     start_beacon_server(service_type)
 
@@ -612,58 +700,81 @@ def setup_api_server(basic=True):
 #################################################################################
 # API SERVERS CODE AND CONFIG SETUP
 #################################################################################
-def install_api_code_config(org='ntropy'):
+def install_api_code_config(environment, org='ntropy'):
+    __validate_environment(environment)
+
     install_api_jar()
-    install_api_config()
+    install_api_config(environment)
 
     if org in ['ntropy', 'grepdata']:
         install_api_https_cert()
 
     install_service_config()
     install_initd(service='api')
-    install_monitoring_config('api', 'dev')
+
+    if environment == 'dev':
+        install_monitoring_config('api', 'dev')
+    elif environment  == 'prod':
+        install_monitoring_config('api', 'prod')
+        install_monitoring_config('api', 'prod-https')
+
     install_etc_hosts(org=org)
 
 def install_api_jar():
     install_key()
 
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing Code',
         run('scp -i Ntropy1.pem kickstart.grepdata.com:/var/ntropy/dataapi/target/dataapi-0.1.jar .')
         sudo('mkdir -p /usr/lib/api')
         sudo('cp dataapi-0.1.jar /usr/lib/api/dataapi-0.1.jar')
-        print 'Installed JAR'
+        print '.. [DONE]'
 
-        sudo('mkdir -p /var/log/api')
-        sudo('chmod -R 777 /var/log/api/')
+        log_dir = '/var/log/api'
+        print 'Creating log directory at %s' %log_dir,
+        sudo('mkdir -p %s' %log_dir)
+        sudo('chmod -R 777 %s' %log_dir)
+        print '.. [DONE]'
 
     delete_key()
 
-def install_api_config(org='ntropy'):
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+def install_api_config(environment, org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Downloading api service configuration files',
         sudo('mkdir -p /usr/lib/api')
-        sudo('wget https://github.com/premal/config/raw/master/api/api-dev-config.yml -O /usr/lib/api/api-dev-config.yml')
 
-        instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
-        zkServers = '\n            - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
+        if environment == 'dev':
+            config_files = ['api-dev']
+            sudo('wget https://github.com/premal/config/raw/master/api/api-dev-config.yml -O api-dev-config.yml')
 
-        if not instances:
-            # default to localhost
-            zkServers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            zkServers = 'localhost'
+        elif environment == 'prod':
+            config_files = ['api-prod', 'api-prod-https']
+            sudo('wget https://github.com/premal/config/raw/master/api/api-prod-config.yml -O api-prod-config.yml')
+            sudo('wget https://github.com/premal/config/raw/master/api/api-prod-https-config.yml -O api-prod-https-config.yml')
 
-        for config_file in ['api-prod-config.yml', 'api-prod-https-config.yml']:
-            sudo('wget https://github.com/premal/config/raw/master/api/%s -O %s' %(config_file, config_file))
-            code_lines = ["f = open('%s').read()" %config_file,
+            instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+            zkServers = '\n            - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
+
+            if not instances:
+                # default to localhost
+                zkServers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+
+        for config_file in config_files:
+            code_lines = ["f = open('%s-config.yml').read()" %config_file,
                           "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
-                          "f = open('/usr/lib/api/%s', 'w')" %config_file,
+                          "f = open('/usr/lib/api/%s-config.yml', 'w')" %config_file,
                           "f.write(out)",
                           "f.close()"]    
             sudo('python -c "%s"' %'; '.join(code_lines))
-        print 'Downloaded Configs'
+        print '.. [DONE]'
 
 def install_api_https_cert():
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        print 'Installing api certificate',
         run('wget "%s" -O ~/.ssh/api.keystore' %aws.generate_url('bootstrap-keys', 'api.keystore'))
         sudo('chmod 400 ~/.ssh/api.keystore')
+        print '.. [DONE]'
     
 #################################################################################
 # API SERVER SERVICES
@@ -674,11 +785,17 @@ def _validate_service_type(service_type):
 
 def start_api_server(service_type):
     _validate_service_type(service_type)
-    sudo('nohup sh -c "/etc/init.d/api %s start &"' %(service_type))
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Starting api service',
+        sudo('nohup sh -c "/etc/init.d/api %s start &"' %(service_type))
+        print '.. [DONE]'
 
 def stop_api_server(service_type):
     _validate_service_type(service_type)
-    sudo('/etc/init.d/api %s stop' %(service_type))
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Stopping api service',
+        sudo('/etc/init.d/api %s stop' %(service_type))
+        print '.. [DONE]'
 
 def restart_api_server(service_type):
     _validate_service_type(service_type)
@@ -697,32 +814,41 @@ def setup_frontend_server(basic=True):
     install_python_mysqldb()
 
 def install_nginx():
-    sudo('apt-get -y install nginx')
-    sudo('apt-get -y install python-flup')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing nginx',
+        sudo('apt-get -y install nginx')
+        sudo('apt-get -y install python-flup')
+        print '.. [DONE]'
 
 def install_django():
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
         result = run('python -c "import django;"')
 
     if result.failed:
+        print 'Installing Django',
         run('wget https://s3.amazonaws.com/bootstrap-software/Django-1.4.3.tar.gz -O Django-1.4.3.tar.gz')
         run('tar xzf Django-1.4.3.tar.gz')
         with cd('Django-1.4.3'):
             run('sudo python setup.py install')
         run('rm Django-1.4.3.tar.gz')
         run('sudo rm -rf Django-1.4.3')
-    else:
-        print 'Django is already installed'
+        print '.. [DONE]'
 
 def install_tastypie():
-    sudo('apt-get -y install python-pip')
-    sudo('wget https://pypi.python.org/packages/source/d/django-tastypie/django-tastypie-0.9.11.tar.gz -O django-tastypie-0.9.11.tar.gz')
-    sudo('tar xvzf django-tastypie-0.9.11.tar.gz')
-    with cd('django-tastypie-0.9.11'):
-        sudo('python setup.py install')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing tastypie',
+        sudo('apt-get -y install python-pip')
+        sudo('wget https://pypi.python.org/packages/source/d/django-tastypie/django-tastypie-0.9.11.tar.gz -O django-tastypie-0.9.11.tar.gz')
+        sudo('tar xvzf django-tastypie-0.9.11.tar.gz')
+        with cd('django-tastypie-0.9.11'):
+            sudo('python setup.py install')
+        print '.. [DONE]'
 
 def install_python_mysqldb():
-    run('sudo apt-get -y install python-mysqldb')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing python mysql connector',
+        run('sudo apt-get -y install python-mysqldb')
+        print '.. [DONE]'
 
 #################################################################################
 # FRONTEND CONFIG
@@ -734,53 +860,65 @@ def install_frontend_config(org='ntropy'):
     install_django_settings(org=org)
 
 def install_nginx_config():
-    run('wget https://github.com/premal/config/raw/master/frontend/nginx.conf -O nginx.conf')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing installing nginx config',
+        run('wget https://github.com/premal/config/raw/master/frontend/nginx.conf -O nginx.conf')
 
-    code_lines = ["f = open('nginx.conf').read()" ,
-                  "out = f.replace('REPLACE_WITH_WORKER_PROCESSES', '4')",
-                  "out = out.replace('REPLACE_WITH_NUM_WORKER_CONNECTIONS', '1024')",
-                  "f = open('/etc/nginx/nginx.conf', 'w')",
-                  "f.write(out)",
-                  "f.close()"]
-    run('sudo python -c "%s"' %'; '.join(code_lines))
-
+        code_lines = ["f = open('nginx.conf').read()" ,
+                      "out = f.replace('REPLACE_WITH_WORKER_PROCESSES', '4')",
+                      "out = out.replace('REPLACE_WITH_NUM_WORKER_CONNECTIONS', '1024')",
+                      "f = open('/etc/nginx/nginx.conf', 'w')",
+                      "f.write(out)",
+                      "f.close()"]
+        run('sudo python -c "%s"' %'; '.join(code_lines))
+        print '.. [DONE]'
+        
 def install_sitecustomize():
-    sudo('mkdir -p /var/log/ntropy')
-    sudo('chmod 777 /var/log/ntropy/')
-    sudo('touch /var/log/ntropy/error.log')
-    sudo('wget https://github.com/premal/config/raw/master/frontend/sitecustomize.py -O /etc/python2.7/sitecustomize.py')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing python sitecustomize',
+        sudo('mkdir -p /var/log/ntropy')
+        sudo('chmod 777 /var/log/ntropy/')
+        sudo('touch /var/log/ntropy/error.log')
+        sudo('wget https://github.com/premal/config/raw/master/frontend/sitecustomize.py -O /etc/python2.7/sitecustomize.py')
+        print '.. [DONE]'
 
 def install_django_config():
-    run('wget https://github.com/premal/config/raw/master/frontend/start_django -O start_django')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing django restart script',
+        run('wget https://github.com/premal/config/raw/master/frontend/start_django -O start_django')
 
-    code_lines = ["f = open('start_django').read()", 
-                  "out = f.replace('MAX_CHILDREN', '4')",
-                  "out = out.replace('MAX_SPARE', '4')",
-                  "out = out.replace('MIN_SPARE', '4')",
-                  "f = open('/etc/django/start_django', 'w')",
-                  "f.write(out)",
-                  "f.close()"]
-    sudo('mkdir -p /etc/django')
-    sudo('python -c "%s"' %'; '.join(code_lines))
-    sudo('chmod +x /etc/django/start_django')
+        code_lines = ["f = open('start_django').read()", 
+                      "out = f.replace('MAX_CHILDREN', '4')",
+                      "out = out.replace('MAX_SPARE', '4')",
+                      "out = out.replace('MIN_SPARE', '4')",
+                      "f = open('/etc/django/start_django', 'w')",
+                      "f.write(out)",
+                      "f.close()"]
+        sudo('mkdir -p /etc/django')
+        sudo('python -c "%s"' %'; '.join(code_lines))
+        sudo('chmod +x /etc/django/start_django')
+        print '.. [DONE]'
 
 def install_django_settings(org='ntropy'):
-    run('wget https://github.com/premal/config/raw/master/frontend/django_settings.py -O django_settings.py')
-    
-    try:
-        mysql_master_ip = aws.get_instances(service_type='mysql', org=org, state='running')[0].private_ip_address
-    except IndexError:
-        mysql_master_ip = 'localhost'
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing django settings',
+        run('wget https://github.com/premal/config/raw/master/frontend/django_settings.py -O django_settings.py')
+        
+        try:
+            mysql_master_ip = aws.get_instances(service_type='mysql', org=org, state='running')[0].private_ip_address
+        except IndexError:
+            mysql_master_ip = 'localhost'
 
-    code_lines = ["f = open('django_settings.py').read()" ,
-                  "out = f.replace('REPLACE_MYSQL_IP', '%s')" %mysql_master_ip,
-                  "f = open('/var/ntropy/ui/web/server/settings.py', 'w')",
-                  "f.write(out)",
-                  "f.close()"]
-    run('python -c "%s"' %'; '.join(code_lines))
+        code_lines = ["f = open('django_settings.py').read()" ,
+                      "out = f.replace('REPLACE_MYSQL_IP', '%s')" %mysql_master_ip,
+                      "f = open('/var/ntropy/ui/web/server/settings.py', 'w')",
+                      "f.write(out)",
+                      "f.close()"]
+        run('python -c "%s"' %'; '.join(code_lines))
+        print '.. [DONE]'
 
 def update_frontend_code(branch='develop'):
-    pass
+    pull_code(branch=branch)
     
 #################################################################################
 # FRONTEND SERVICES
@@ -1695,41 +1833,4 @@ def create_hbase_servers(org='ntropy', num_instances=1, instance_type='t1.micro'
                 pass
                 start_datanode()
                 start_regionserver()
-
-#################################################################################
-# CREATE CLUSTER
-#################################################################################
-def create_cluster(org='ntropy', branch='master',
-                   num_mysql=1, mysql_instance_type='t1.micro',
-                   num_zookeeper=1, zookeeper_instance_type='t1.micro',
-                   num_kafka=1, kafka_instance_type='t1.micro',
-                   num_beacon_web=1, beacon_web_instance_type='t1.micro',
-                   num_storm=1, storm_instance_type='t1.micro',
-                   num_hbase=1, hbase_instance_type='t1.micro',
-                   num_frontend=1, frontend_instance_type='t1.micro',
-                   num_api=1, api_instance_type='t1.micro'):
-
-    create_mysql_servers(org=org, num_instances=num_mysql, instance_type=mysql_instance_type, branch=branch)
-    create_zookeeper_servers(org=org, num_instances=num_zookeeper, instance_type=mysql_instance_type, branch=branch)
-    create_kafka_servers(org=org, num_instances=num_kafka, instance_type=mysql_instance_type, branch=branch)
-    create_beacon_web_servers(org=org, num_instances=num_beacon_web, instance_type=mysql_instance_type, branch=branch)
-    #create_frontend_servers(org=org, num_instances=num_frontend, instance_type=frontend_instance_type, branch=branch)
-    #create_api_servers(org=org, num_instances=num_api, instance_type=api_instance_type, branch=branch)
-    create_storm_servers(org=org, num_instances=num_storm, instance_type=mysql_instance_type, branch=branch)
-    create_hbase_servers(org=org, num_instances=num_hbase, instance_type=mysql_instance_type, branch=branch)
-    
-def setup_uber_server(org='ntropy'):
-    install_basic_software()
-    setup_mysql_server(basic=False)
-    setup_beacon_server(basic=False)
-    setup_api_server(basic=False)
-    setup_frontend_server(basic=False)
-    setup_zookeeper_server(basic=False)
-    setup_kafka_server(basic=False)
-    setup_storm_server(basic=False)
-    setup_hadoop_server(basic=False)
-    setup_hbase_server(basic=False)
-
-def install_uber_config(org='ntropy'):
-    pass
 

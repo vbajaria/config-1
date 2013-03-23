@@ -3,7 +3,7 @@ storm.zookeeper.servers:
 
 nimbus.host: "REPLACE_WITH_NIMBUS_SERVER"
 
-storm.local.dir: "/data/storm"
+storm.local.dir: "REPLACE_WITH_DATA_DIR"
 
 java.library.path: "/usr/local/lib:/usr/lib/storm"
 

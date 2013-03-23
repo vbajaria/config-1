@@ -1,9 +1,7 @@
 hbase:
     zookeeper:
         hosts:
-            - ec2-23-20-150-218.compute-1.amazonaws.com
-            - ec2-54-242-112-85.compute-1.amazonaws.com
-            - ec2-50-16-151-110.compute-1.amazonaws.com
+            - REPLACE_WITH_ZOOKEEPER_SERVERS
         port: 2181
         connectionTimeout: 10s
         sessionTimeout: 10s
@@ -57,9 +55,7 @@ mysql:
 kafka:
     zookeeper:
         hosts:
-            - ec2-23-20-150-218.compute-1.amazonaws.com
-            - ec2-54-242-112-85.compute-1.amazonaws.com
-            - ec2-50-16-151-110.compute-1.amazonaws.com
+            - REPLACE_WITH_ZOOKEEPER_SERVERS
         port: 2181
         connectionTimeout: 10s
         sessionTimeout: 10s

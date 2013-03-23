@@ -1,7 +1,7 @@
 hbase:
     zookeeper:
         hosts:
-            - localhost
+            - REPLACE_WITH_ZOOKEEPER_SERVERS
         port: 2181
         connectionTimeout: 10s
         sessionTimeout: 10s
@@ -52,7 +52,7 @@ mysql:
 kafka:
     zookeeper:
         hosts:
-            - localhost
+            - REPLACE_WITH_ZOOKEEPER_SERVERS
         port: 2181
         connectionTimeout: 10s
         sessionTimeout: 10s

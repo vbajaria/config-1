@@ -6,7 +6,7 @@
 <configuration>
   <property>
     <name>dfs.name.dir</name>
-    <value>/mnt/name,/hdfs/volume1/name</value>
+    <value>/grepdata/hadoop/name,/hdfs/volume1/name</value>
   </property>
 
   <property>

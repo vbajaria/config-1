@@ -88,11 +88,7 @@ def install_basic_software():
         apt_get_update()
 
         print 'Installing htop iotop sysstat git mkpasswd ntp locate liblzo2-dev',
-        run('sudo apt-get -y install htop iotop sysstat git mkpasswd ntp locate liblzo2-dev')
-        print '.. [DONE]'
-
-        print 'Installing monit',
-        install_monit()
+        run('sudo apt-get -y install htop iotop sysstat git mkpasswd ntp locate liblzo2-dev monit')
         print '.. [DONE]'
 
         install_ganglia_slave()
@@ -355,6 +351,18 @@ def install_ssh_config():
         put('/home/premal/ssh_config', '/etc/ssh/ssh_config', use_sudo=True)
         run('sudo service ssh restart')
 
+def install_passwordless_ssh(username):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = sudo('ls -l /home/%s/.ssh/id_rsa' %username)
+
+    if result.failed:
+        with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+            print 'Creating passwordless user: %s' %username,
+            run('sudo -u %s ssh-keygen -t rsa -P "" -f /home/%s/.ssh/id_rsa' %(username, username))
+            run('sudo -u %s cp /home/%s/.ssh/id_rsa.pub /home/%s/.ssh/authorized_keys' %(
+                username, username, username))
+            print '.. [DONE]'
+
 #################################################################################
 # KEY MANAGEMENT
 #################################################################################
@@ -560,7 +568,7 @@ def install_java():
 # MYSQL SERVER SOFTWARE SETUP
 #################################################################################
 def setup_mysql_server(uber=False):
-    if not user:
+    if not uber:
         install_basic_software()
     install_mysql()
 
@@ -600,7 +608,7 @@ def restart_mysql():
 # BEACON SERVERS SOFTWARE SETUP
 #################################################################################
 def setup_beacon_server(uber=False):
-    if not user:
+    if not uber:
         install_basic_software()
     install_java()
 
@@ -713,7 +721,7 @@ def restart_beacon_server(service_type):
 # API SERVER SOFTWARE
 #################################################################################
 def setup_api_server(uber=False):
-    if not user:
+    if not uber:
         install_basic_software()
     install_java()
 
@@ -826,7 +834,7 @@ def restart_api_server(service_type):
 # FRONTEND SERVER SOFTWARE SETUP
 #################################################################################
 def setup_frontend_server(uber=False):
-    if not user:
+    if not uber:
         install_basic_software()
     install_nginx()
     install_django()
@@ -951,11 +959,14 @@ def frontend_start():
 # ZOOKEEPER SOFTWARE SETUP
 #################################################################################
 def setup_zookeeper_server(uber=False):
-    if not user:
+    if not uber:
         install_basic_software()
     install_java()
     install_user('zookeeper', 'zookeeper')
     install_zookeeper()
+
+    install_bashrc(service_type='zookeeper')
+    install_monitoring_config(service='zookeeper')
     install_data_dir('/grepdata', 'zookeeper')
     install_log_dir('zookeeper')
 
@@ -983,8 +994,6 @@ def install_zookeeper():
 def install_zookeeper_config(org='ntropy'):
     install_zkEnv()
     install_zoo_cfg('/grepdata/zookeeper', org=org)
-    install_bashrc(service_type='zookeeper')
-    install_monitoring_config(service='zookeeper')
     install_etc_hosts(org=org)
         
 def install_zkEnv():
@@ -1050,11 +1059,16 @@ def restart_zookeeper():
 # KAFKA SOFTWARE SETUP
 #################################################################################
 def setup_kafka_server(uber=False):
-    if not user:
+    if not uber:
         install_basic_software()
     install_java()
     install_user('kafka', 'kafka')
     install_kafka()
+
+    install_service_config()
+    install_kafka_daemon()
+    install_bashrc(service_type='kafka')
+    install_monitoring_config(service='kafka')
     install_data_dir('/grepdata', 'kafka')
     install_log_dir('kafka')
 
@@ -1099,10 +1113,6 @@ def install_kafka_log_dir(log_dir):
 #################################################################################
 def install_kafka_config(org='ntropy'):
     install_kafka_properties(org=org)
-    install_service_config()
-    install_kafka_daemon()
-    install_bashrc(service_type='kafka')
-    install_monitoring_config(service='kafka')
     install_etc_hosts(org=org)
 
 def install_kafka_properties(org='ntropy'):
@@ -1178,7 +1188,7 @@ def restart_kafka():
 # STORM SOFTWARE SETUP
 #################################################################################
 def setup_storm_server(uber=False):
-    if not user:
+    if not uber:
         install_basic_software()
     install_storm_essentials()
     install_java()
@@ -1186,8 +1196,16 @@ def setup_storm_server(uber=False):
     install_jzmq()
     install_user('storm', 'storm')
     install_storm()
+
     install_data_dir('/grepdata', 'storm')
     install_log_dir('storm')
+    install_service_config()
+    install_storm_daemon(org=org)
+    install_bashrc(service_type='storm')
+    install_storm_symlinks()
+    install_monitoring_config('storm', 'nimbus')
+    install_monitoring_config('storm', 'ui')
+    install_monitoring_config('storm', 'supervisor')
 
 def install_storm_essentials():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
@@ -1253,101 +1271,135 @@ def install_storm():
                 sudo('chown -R storm:storm /usr/lib/storm')
             print '.. [Done]'
 
+def install_storm_daemon(org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing storm daemon',
+        sudo('wget https://github.com/premal/config/raw/master/storm/init.d -O /etc/init.d/storm')
+        sudo('chmod +x /etc/init.d/storm')
+        print '.. [DONE]'
+
+def install_storm_symlinks():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing storm log symlinks',
+        sudo('ln -s /usr/lib/storm/logs/ /var/log/storm')
+        print '.. [DONE]'
+
 #################################################################################
 # STORM CODE AND CONFIG SETUP
 #################################################################################
 def install_storm_code_config(org='ntropy'):
     install_storm_config(org=org)
-    install_storm_daemon(org=org)
-    install_service_config()
-    install_bashrc(service_type='storm')
-    install_storm_symlinks()
-    install_monitoring_config('storm', 'nimbus')
-    install_monitoring_config('storm', 'ui')
-    install_monitoring_config('storm', 'supervisor')
     install_etc_hosts(org=org)
 
-def install_storm_config(org='ntropy'):
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+def install_storm_config(data_dir, org='ntropy'):    
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')): 
+        print 'Installing storm config',
         run('wget https://github.com/premal/config/raw/master/storm/storm.yaml -O storm.yaml')
 
-    instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
-    zkServers = '\n     - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
+        instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+        zkServers = '\n     - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
 
-    # default to localhost
-    if not instances:
-        zkServers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+        # default to localhost
+        if not instances:
+            zkServers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
 
-    try:
-        public_dns_name = aws.get_instances(service_type='storm', org=org, state='running', master=True)[0].public_dns_name
-    except IndexError:
-        public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+        try:
+            public_dns_name = aws.get_instances(service_type='storm', org=org, state='running', master=True)[0].public_dns_name
+        except IndexError:
+            public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
 
-    code_lines = ["f = open('storm.yaml').read()",
-                  "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
-                  "out = out.replace('REPLACE_WITH_NIMBUS_SERVER', '%s')" %public_dns_name,
-                  "f = open('/usr/lib/storm/conf/storm.yaml', 'w')",
-                  "f.write(out)",
-                  "f.close()"]
-    
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        sudo('python -c "%s"' %'; '.join(code_lines), user='storm')
-
-def install_storm_daemon(org='ntropy'):
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        sudo('wget https://github.com/premal/config/raw/master/storm/init.d -O /etc/init.d/storm')
-        sudo('chmod +x /etc/init.d/storm')
-
-def install_storm_symlinks():
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        sudo('ln -s /usr/lib/storm/logs/ /var/log/storm')
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        sudo('ln -s /usr/lib/storm/conf /etc/storm-conf')
+        code_lines = ["f = open('storm.yaml').read()",
+                      "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
+                      "out = out.replace('REPLACE_WITH_NIMBUS_SERVER', '%s')" %public_dns_name,
+                      "out = out.replace('REPLACE_WITH_DATA_DIR', '%s')" %data_dir,
+                      "f = open('/usr/lib/storm/conf/storm.yaml', 'w')",
+                      "f.write(out)",
+                      "f.close()"]
+        
+        with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+            sudo('python -c "%s"' %'; '.join(code_lines), user='storm')
+        print '.. [DONE]'
 
 #################################################################################
 # STORM SERVICES
 #################################################################################
 def start_storm_master():
-    start_storm_nimbus()
-    start_storm_ui()
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Starting storm master (nimbus and ui)',
+        start_storm_nimbus()
+        start_storm_ui()
+        print '.. [DONE]'
 
 def stop_storm_master():
-    stop_storm_nimbus()
-    stop_storm_ui()
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Stopping storm master (nimbus and ui)',
+        stop_storm_nimbus()
+        stop_storm_ui()
+        print '.. [DONE]'
 
 def restart_storm_master():
-    stop_storm_master()
-    start_storm_master()
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Restarting storm master (nimbus and ui)',
+        stop_storm_master()
+        start_storm_master()
+        print '.. [DONE]'
 
 def start_storm_nimbus():
-    run('nohup sh -c "sudo -u storm /etc/init.d/storm nimbus start &"')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Starting storm nimbus',
+        run('nohup sh -c "sudo -u storm /etc/init.d/storm nimbus start &"')
+        print '.. [DONE]'
 
 def stop_storm_nimbus():
-    run('sudo -u storm /etc/init.d/storm nimbus stop')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Stopping storm nimbus',
+        run('sudo -u storm /etc/init.d/storm nimbus stop')
+        print '.. [DONE]'
 
 def restart_storm_nimbus():
-    stop_storm_nimbus()
-    start_storm_nimbus()
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Restarting storm nimbus',
+        stop_storm_nimbus()
+        start_storm_nimbus()
+        print '.. [DONE]'
 
 def start_storm_ui():
-    run('nohup sh -c "sudo -u storm /etc/init.d/storm ui start &"')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Starting storm ui',
+        run('nohup sh -c "sudo -u storm /etc/init.d/storm ui start &"')
+        print '.. [DONE]'
 
 def stop_storm_ui():
-    run('sudo -u storm /etc/init.d/storm ui stop')
-
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Stopping storm ui',
+        run('sudo -u storm /etc/init.d/storm ui stop')
+        print '.. [DONE]'
+    
 def restart_storm_ui():
-    stop_storm_ui()
-    start_storm_ui()
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Restarting storm ui',
+        stop_storm_ui()
+        start_storm_ui()
+        print '.. [DONE]'
 
 def start_storm_supervisor():
-    run('nohup sh -c "sudo -u storm /etc/init.d/storm supervisor start &"')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Starting storm supervisor',
+        run('nohup sh -c "sudo -u storm /etc/init.d/storm supervisor start &"')
+        print '.. [DONE]'
 
 def stop_storm_supervisor():
-    run('sudo -u storm /etc/init.d/storm supervisor stop')
-
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Stopping storm supervisor',
+        run('sudo -u storm /etc/init.d/storm supervisor stop')
+        print '.. [DONE]'
+    
 def restart_storm_supervisor():
-    stop_storm_supervisor()
-    start_storm_supervisor()
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Resarting storm supervisor',
+        stop_storm_supervisor()
+        start_storm_supervisor()
+        print '.. [DONE]'
 
 #################################################################################
 # STORM LOGS
@@ -1357,104 +1409,10 @@ def delete_storm_logs():
         sudo('rm /usr/lib/storm/logs/*.log.?')
 
 #################################################################################
-# HBASE SOFTWARE SETUP
-#################################################################################
-def setup_hbase_server(uber=False):
-    if not user:
-        install_basic_software()
-    install_java()
-    install_user('hbase', 'hbase')
-    install_passwordless_ssh('hbase')
-    install_hbase()
-    install_hbase_symlinks()
-    install_lzo()
-
-def install_passwordless_ssh(username):
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = sudo('ls -l /home/%s/.ssh/id_rsa' %username)
-
-    if result.failed:
-        run('sudo -u %s ssh-keygen -t rsa -P "" -f /home/%s/.ssh/id_rsa' %(username, username))
-        run('sudo -u %s cp /home/%s/.ssh/id_rsa.pub /home/%s/.ssh/authorized_keys' %(
-            username, username, username))
-
-def install_hbase():
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /usr/lib/hbase')
-
-    if result.failed:
-        run('wget https://s3.amazonaws.com/bootstrap-software/hbase-0.94.4.tar.gz -O hbase-0.94.4.tar.gz')
-        sudo('mv hbase-0.94.4.tar.gz /usr/lib/')
-        with cd('/usr/lib'):
-            sudo('tar xzf hbase-0.94.4.tar.gz')
-            sudo('rm hbase-0.94.4.tar.gz')
-            sudo('ln -s hbase-0.94.4 hbase')
-            sudo('chown -R hbase:hbase hbase/')
-            sudo('chown -R hbase:hbase hbase')
-    else:
-        print 'HBase is already installed'
-
-    sudo('mkdir -p /grepdata/hbase')
-    sudo('mkdir -p /grepdata/hbase/tmp')
-    sudo('mkdir -p /grepdata/hbase/local')
-    sudo('chown -R hbase:hbase /grepdata/hbase')
-
-def install_hbase_symlinks():
-    sudo('ln -s /usr/lib/hbase/logs /var/log/hbase')
-
-def install_lzo():
-    sudo('apt-get -y install liblzo2-dev')
-
-    with cd('/usr/lib/hadoop/lib/native/Linux-amd64-64'):
-        sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.a -O libgplcompression.a', user='hadoop')
-        sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.la -O libgplcompression.la', user='hadoop')
-        sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.so.0.0.0 -O libgplcompression.so.0.0.0', user='hadoop')
-
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /usr/lib/hadoop/lib/native/Linux-amd64-64/libgplcompression.so')
-    if result.failed:
-        with cd('/usr/lib/hadoop/lib/native/Linux-amd64-64'):
-            sudo('ln -s libgplcompression.so.0.0.0 libgplcompression.so')
-
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /usr/lib/hadoop/lib/native/Linux-amd64-64/libgplcompression.so.0')
-    if result.failed:
-        with cd('/usr/lib/hadoop/lib/native/Linux-amd64-64'):
-            sudo('ln -s libgplcompression.so.0.0.0 libgplcompression.so.0', user='hadoop')
-
-    with cd('/usr/lib/hadoop/lib/'):
-        sudo('wget https://s3.amazonaws.com/bootstrap-software/hadoop-lzo-0.4.15.jar -O hadoop-lzo-0.4.15.jar', user='hadoop')
-
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /usr/lib/hbase/lib/native/Linux-amd64-64')
-    if result.failed:
-        sudo('mkdir /usr/lib/hbase/lib/native/Linux-amd64-64', user='hbase')
-
-    with cd('/usr/lib/hbase/lib/native/Linux-amd64-64/'):
-        sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.a -O libgplcompression.a', user='hbase')
-        sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.la -O libgplcompression.la', user='hbase')
-        sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.so.0.0.0 -O libgplcompression.so.0.0.0', user='hbase')
-
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /usr/lib/hbase/lib/native/Linux-amd64-64/libgplcompression.so')
-    if result.failed:
-        with cd('/usr/lib/hbase/lib/native/Linux-amd64-64/'):
-            sudo('ln -s libgplcompression.so.0.0.0 libgplcompression.so', user='hbase')
-
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('ls -l /usr/lib/hbase/lib/native/Linux-amd64-64/libgplcompression.so.0')
-    if result.failed:
-        with cd('/usr/lib/hbase/lib/native/Linux-amd64-64/'):
-            sudo('ln -s libgplcompression.so.0.0.0 libgplcompression.so.0', user='hbase')
-
-    with cd('/usr/lib/hbase/lib/'):
-        sudo('wget https://s3.amazonaws.com/bootstrap-software/hadoop-lzo-0.4.15.jar -O hadoop-lzo-0.4.15.jar', user='hbase')
-
-#################################################################################
 # HADOOP SOFTWARE SETUP
 #################################################################################
 def setup_hadoop_server(uber=False):
-    if not user:
+    if not uber:
         install_basic_software()
     install_java()
     install_user('hadoop', 'hadoop')
@@ -1462,30 +1420,322 @@ def setup_hadoop_server(uber=False):
     install_hadoop()
     install_hdfs_dirs()
 
+    install_hadoop_daemon()
+    install_hadoop_symlinks()
+    install_monitoring_config('hadoop', 'namenode')
+    install_monitoring_config('hadoop', 'datanode')
+
 def install_hadoop():
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
         result = run('ls -l /usr/lib/hadoop')
 
     if result.failed:
-        run('wget https://s3.amazonaws.com/bootstrap-software/hadoop-1.0.4-bin.tar.gz -O hadoop-1.0.4-bin.tar.gz')
-        sudo('mv hadoop-1.0.4-bin.tar.gz /usr/lib/')
-        with cd('/usr/lib'):
-            sudo('tar xzf hadoop-1.0.4-bin.tar.gz')
-            sudo('rm hadoop-1.0.4-bin.tar.gz')
-            sudo('ln -s hadoop-1.0.4 hadoop')
-            sudo('chown -R hadoop:hadoop hadoop/')
-            sudo('chown -R hadoop:hadoop hadoop')
-    else:
-        print 'Hadoop is already installed'
-        
-def install_hdfs_dirs():
-    sudo('mkdir -p /grepdata/hadoop/name')
-    sudo('chown -R hadoop:hadoop /grepdata/hadoop/')
+        with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+            print 'Installing Hadoop',            
+            run('wget https://s3.amazonaws.com/bootstrap-software/hadoop-1.0.4-bin.tar.gz -O hadoop-1.0.4-bin.tar.gz')
+            sudo('mv hadoop-1.0.4-bin.tar.gz /usr/lib/')
+            with cd('/usr/lib'):
+                sudo('tar xzf hadoop-1.0.4-bin.tar.gz')
+                sudo('rm hadoop-1.0.4-bin.tar.gz')
+                sudo('ln -s hadoop-1.0.4 hadoop')
+                sudo('chown -R hadoop:hadoop hadoop/')
+                sudo('chown -R hadoop:hadoop hadoop')
+            print '.. [DONE]'
 
-    sudo('mkdir -p /hdfs/volume1')
-    sudo('mkdir -p /hdfs/volume1/data')
-    sudo('mkdir -p /hdfs/volume1/name')
-    sudo('chown -R hadoop:hadoop /hdfs/')
+def install_hdfs_dirs():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Creating directories',            
+        sudo('mkdir -p /grepdata/hadoop/name')
+        sudo('chown -R hadoop:hadoop /grepdata/hadoop/')
+
+        sudo('mkdir -p /hdfs/volume1')
+        sudo('mkdir -p /hdfs/volume1/data')
+        sudo('mkdir -p /hdfs/volume1/name')
+        sudo('chown -R hadoop:hadoop /hdfs/')
+        print '.. [DONE]'
+
+def install_hadoop_daemon():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing hadoop daemon',            
+        sudo('wget https://github.com/premal/config/raw/master/hadoop/hadoop-daemon.sh -O /usr/lib/hadoop/bin/hadoop-daemon.sh', user='hadoop')
+        print '.. [DONE]'
+
+def install_hadoop_symlinks():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing hadoop symlinks',            
+        sudo('ln -s /usr/lib/hadoop/logs /var/log/hadoop')
+        print '.. [DONE]'
+
+#################################################################################
+# HADOOP CONFIGS
+#################################################################################
+def install_hadoop_config(org='ntropy'):
+    install_hadoop_env(org=org)
+    install_hdfs_site(org=org)
+    install_core_site(org=org)
+    install_hdfs_master(org=org)
+    install_hdfs_slaves(org=org)
+    install_hadoop_metrics(org=org)
+
+def install_hadoop_env(org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing hadoop-env',
+        sudo('wget https://github.com/premal/config/raw/master/hadoop/hadoop-env.sh -O /usr/lib/hadoop/conf/hadoop-env.sh', user='hadoop')
+        print '.. [DONE]'
+
+def install_hdfs_site(org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing hdfs-site',
+        sudo('wget https://github.com/premal/config/raw/master/hadoop/hdfs-site.xml -O /usr/lib/hadoop/conf/hdfs-site.xml', user='hadoop')
+        print '.. [DONE]'
+
+def install_core_site(org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing core-site',
+        run('wget https://github.com/premal/config/raw/master/hadoop/core-site.xml -O core-site.xml')
+
+        try:
+            public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
+        except IndexError:
+            public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+
+        code_lines = ["f = open('core-site.xml').read()",
+                      "out = f.replace('REPLACE_WITH_NAMENODE', '%s')" %public_dns_name,
+                      "f = open('/usr/lib/hadoop/conf/core-site.xml', 'w')",
+                      "f.write(out)",
+                      "f.close()"]
+        sudo('python -c "%s"' %'; '.join(code_lines), user='hadoop')
+        print '.. [DONE]'
+
+def install_hdfs_master(org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing master config',
+        try:
+            public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
+        except IndexError:
+            public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+
+        code_lines = ["f = open('/usr/lib/hadoop/conf/master', 'w')",
+                      "f.write('%s')" %public_dns_name,
+                      "f.close()"]
+        sudo('python -c "%s"' %'; '.join(code_lines), user='hadoop')
+        print '.. [DONE]'
+
+def install_hdfs_slaves(org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing slaves config',
+        instances = aws.get_instances(service_type='hbase', org=org, state='running', slave=True)
+        datanodes = '\n'.join([x.public_dns_name for x in instances])
+
+        if not datanodes:
+            datanodes = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+
+        code_lines = ["f = open('/usr/lib/hadoop/conf/slaves', 'w')",
+                      "f.write('''%s''')" %datanodes,
+                      "f.close()"]
+        sudo('python -c "%s"' %'; '.join(code_lines), user='hadoop')
+        print '.. [DONE]'
+
+def install_hadoop_metrics(org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing hadoop metrics',
+        run('wget https://github.com/premal/config/raw/master/hadoop/hadoop-metrics2.properties -O hadoop-metrics2.properties')
+
+        try:
+            public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
+        except IndexError:
+            public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+
+        code_lines = ["f = open('hadoop-metrics2.properties').read()",
+                      "out = f.replace('REPLACE_WITH_GANGLIA_MASTER', '%s')" %public_dns_name,
+                      "f = open('/usr/lib/hadoop/conf/hadoop-metrics2.properties', 'w')",
+                      "f.write(out)",
+                      "f.close()"]
+        sudo('python -c "%s"' %'; '.join(code_lines), user='hadoop')
+        print '.. [DONE]'
+
+#################################################################################
+# HADOOP SERVICES
+#################################################################################
+def format_namenode(service_type, org='ntropy'):
+    env.hosts = get_hosts(org=org, service_type=service_type, state='running', master=True)
+    for host in env.hosts:
+        with(settings(host_string=host)):
+            __format_namenode()
+
+def __format_namenode():
+    with cd('/usr/lib/hadoop'):
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            print 'Formatting namenode',
+            run('echo Y | sudo -u hadoop bin/hadoop namenode -format')
+            print '.. [DONE]'
+
+def start_namenode(org='ntropy'):
+    env.hosts = get_hosts(org=org, state='running', master=True)
+    for host in env.hosts:
+        with(settings(host_string=host)):
+            __start_namenode()
+
+def __start_namenode():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Starting namenode',
+        sudo('/usr/lib/hadoop/bin/start-dfs.sh', user='hadoop')
+
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            result = run('/usr/lib/hadoop/bin/hadoop fs -ls /hbase')
+
+        if result.failed:
+            sudo('/usr/lib/hadoop/bin/hadoop fs -mkdir /hbase', user='hadoop')
+            sudo('/usr/lib/hadoop/bin/hadoop fs -chown -R hbase:hbase /hbase', user='hadoop')
+        print '.. [DONE]'
+
+def stop_namenode(org='ntropy'):
+    env.hosts = get_hosts(org=org, state='running', master=True)
+    for host in env.hosts:
+        with(settings(host_string=host)):
+            __stop_namenode()
+
+def __stop_namenode():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Stopping namenode',
+        sudo('/usr/lib/hadoop/bin/stop-dfs.sh', user='hadoop')
+        print '.. [DONE]'
+
+def restart_namenode(org='ntropy'):
+    env.hosts = get_hosts(org=org, state='running', master=True)
+    for host in env.hosts:
+        with(settings(host_string=host)):
+            __restart_namenode()
+
+def __restart_namenode():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Restarting namenode',
+        __stop_namenode()
+        __start_namenode()
+        print '.. [DONE]'
+
+def start_datanode(org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Starting datanode',
+        sudo('/usr/lib/hadoop/bin/hadoop-daemon.sh start datanode', user='hadoop')
+        print '.. [DONE]'
+
+def stop_datanode(org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Stopping datanode',
+        sudo('/usr/lib/hadoop/bin/hadoop-daemon.sh stop datanode', user='hadoop')
+        print '.. [DONE]'
+
+def restart_datanode(org='ntropy'):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Restarting datanode',
+        stop_datanode(org=org)
+        start_datanode(org=org)
+        print '.. [DONE]'
+
+#################################################################################
+# HBASE SOFTWARE SETUP
+#################################################################################
+def setup_hbase_server(uber=False):
+    if not uber:
+        install_basic_software()
+    install_java()
+    install_user('hbase', 'hbase')
+    install_passwordless_ssh('hbase')
+    install_hbase()
+    install_lzo()
+
+    install_hbase_symlinks()
+    install_bashrc(service_type='hbase')
+    install_hbase_daemon()
+    install_monitoring_config('hbase', 'master')
+    install_monitoring_config('hbase', 'regionserver')
+
+def install_hbase():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        result = run('ls -l /usr/lib/hbase')
+
+    if result.failed:
+        with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+            print 'Installing hbase',
+            run('wget https://s3.amazonaws.com/bootstrap-software/hbase-0.94.4.tar.gz -O hbase-0.94.4.tar.gz')
+            sudo('mv hbase-0.94.4.tar.gz /usr/lib/')
+            with cd('/usr/lib'):
+                sudo('tar xzf hbase-0.94.4.tar.gz')
+                sudo('rm hbase-0.94.4.tar.gz')
+                sudo('ln -s hbase-0.94.4 hbase')
+                sudo('chown -R hbase:hbase hbase/')
+                sudo('chown -R hbase:hbase hbase')
+            print '.. [DONE]'
+
+def install_hbase_dirs():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing hbase directories',
+        sudo('mkdir -p /grepdata/hbase')
+        sudo('mkdir -p /grepdata/hbase/tmp')
+        sudo('mkdir -p /grepdata/hbase/local')
+        sudo('chown -R hbase:hbase /grepdata/hbase')
+        print '.. [DONE]'
+
+def install_hbase_symlinks():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing hbase symlinks',
+        sudo('ln -s /usr/lib/hbase/logs /var/log/hbase')
+        print '.. [DONE]'
+
+def install_lzo():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing lzo',
+        sudo('apt-get -y install liblzo2-dev')
+
+        with cd('/usr/lib/hadoop/lib/native/Linux-amd64-64'):
+            sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.a -O libgplcompression.a', user='hadoop')
+            sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.la -O libgplcompression.la', user='hadoop')
+            sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.so.0.0.0 -O libgplcompression.so.0.0.0', user='hadoop')
+
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            result = run('ls -l /usr/lib/hadoop/lib/native/Linux-amd64-64/libgplcompression.so')
+        if result.failed:
+            with cd('/usr/lib/hadoop/lib/native/Linux-amd64-64'):
+                sudo('ln -s libgplcompression.so.0.0.0 libgplcompression.so')
+
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            result = run('ls -l /usr/lib/hadoop/lib/native/Linux-amd64-64/libgplcompression.so.0')
+        if result.failed:
+            with cd('/usr/lib/hadoop/lib/native/Linux-amd64-64'):
+                sudo('ln -s libgplcompression.so.0.0.0 libgplcompression.so.0', user='hadoop')
+
+        with cd('/usr/lib/hadoop/lib/'):
+            sudo('wget https://s3.amazonaws.com/bootstrap-software/hadoop-lzo-0.4.15.jar -O hadoop-lzo-0.4.15.jar', user='hadoop')
+
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            result = run('ls -l /usr/lib/hbase/lib/native/Linux-amd64-64')
+        if result.failed:
+            sudo('mkdir /usr/lib/hbase/lib/native/Linux-amd64-64', user='hbase')
+
+        with cd('/usr/lib/hbase/lib/native/Linux-amd64-64/'):
+            sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.a -O libgplcompression.a', user='hbase')
+            sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.la -O libgplcompression.la', user='hbase')
+            sudo('wget https://s3.amazonaws.com/bootstrap-software/libgplcompression.so.0.0.0 -O libgplcompression.so.0.0.0', user='hbase')
+
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            result = run('ls -l /usr/lib/hbase/lib/native/Linux-amd64-64/libgplcompression.so')
+        if result.failed:
+            with cd('/usr/lib/hbase/lib/native/Linux-amd64-64/'):
+                sudo('ln -s libgplcompression.so.0.0.0 libgplcompression.so', user='hbase')
+
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            result = run('ls -l /usr/lib/hbase/lib/native/Linux-amd64-64/libgplcompression.so.0')
+        if result.failed:
+            with cd('/usr/lib/hbase/lib/native/Linux-amd64-64/'):
+                sudo('ln -s libgplcompression.so.0.0.0 libgplcompression.so.0', user='hbase')
+
+        with cd('/usr/lib/hbase/lib/'):
+            sudo('wget https://s3.amazonaws.com/bootstrap-software/hadoop-lzo-0.4.15.jar -O hadoop-lzo-0.4.15.jar', user='hbase')
+        print '.. [DONE]'
+
+def install_hbase_daemon():
+    sudo('wget https://github.com/premal/config/raw/master/hbase/hbase-daemon.sh -O /usr/lib/hbase/bin/hbase-daemon.sh', user='hbase')
 
 #################################################################################
 # HBASE CODE AND CONFIG SETUP
@@ -1496,143 +1746,70 @@ def install_hbase_config(org='ntropy'):
     install_hbase_site(org=org)
     install_hbase_regionservers(org=org)
     install_security_limits('hbase', org=org)
-    install_bashrc(service_type='hbase')
     install_etc_hosts(org=org)
-    install_hbase_daemon()
-    install_monitoring_config('hbase', 'master')
-    install_monitoring_config('hbase', 'regionserver')
 
 def install_hbase_env(org='ntropy'):
-    sudo('wget https://github.com/premal/config/raw/master/hbase/hbase-env.sh -O /usr/lib/hbase/conf/hbase-env.sh')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing hbase-env',
+        sudo('wget https://github.com/premal/config/raw/master/hbase/hbase-env.sh -O /usr/lib/hbase/conf/hbase-env.sh')
+        print '.. [DONE]'
 
 def install_hbase_site(org='ntropy'):
-    run('wget https://github.com/premal/config/raw/master/hbase/hbase-site.xml -O hbase-site.xml')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing hbase-site',
+        run('wget https://github.com/premal/config/raw/master/hbase/hbase-site.xml -O hbase-site.xml')
 
-    try:
-        public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
-        instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
-        zkServers = ','.join(["%s" %x.public_dns_name for x in instances])
-    except IndexError:
-        # defaults to localhost
-        public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
-        zkServers = public_dns_name
+        try:
+            public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
+            instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+            zkServers = ','.join(["%s" %x.public_dns_name for x in instances])
+        except IndexError:
+            # defaults to localhost
+            public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            zkServers = public_dns_name
 
-    code_lines = ["f = open('hbase-site.xml').read()",
-                  "out = f.replace('REPLACE_WITH_NAMENODE', '%s')" %public_dns_name,
-                  "out = out.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '%s')" %zkServers,
-                  "f = open('/usr/lib/hbase/conf/hbase-site.xml', 'w')",
-                  "f.write(out)",
-                  "f.close()"]
-    sudo('python -c "%s"' %'; '.join(code_lines), user='hbase')
+        code_lines = ["f = open('hbase-site.xml').read()",
+                      "out = f.replace('REPLACE_WITH_NAMENODE', '%s')" %public_dns_name,
+                      "out = out.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '%s')" %zkServers,
+                      "f = open('/usr/lib/hbase/conf/hbase-site.xml', 'w')",
+                      "f.write(out)",
+                      "f.close()"]
+        sudo('python -c "%s"' %'; '.join(code_lines), user='hbase')
+        print '.. [DONE]'
 
 def install_hbase_regionservers(org='ntropy'):
-    instances = aws.get_instances(service_type='hbase', org=org, state='running', slave=True)
-    regionservers = '\n'.join([x.public_dns_name for x in instances])
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing hbase regionservers',
+        instances = aws.get_instances(service_type='hbase', org=org, state='running', slave=True)
+        regionservers = '\n'.join([x.public_dns_name for x in instances])
 
-    if not regionservers:
-        # default to localhost
-        regionservers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
-    
-    code_lines = ["f = open('/usr/lib/hbase/conf/regionservers', 'w')",
-                  "f.write('''%s''')" %regionservers,
-                  "f.close()"]
-    sudo('python -c "%s"' %'; '.join(code_lines), user='hbase')
+        if not regionservers:
+            # default to localhost
+            regionservers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+        
+        code_lines = ["f = open('/usr/lib/hbase/conf/regionservers', 'w')",
+                      "f.write('''%s''')" %regionservers,
+                      "f.close()"]
+        sudo('python -c "%s"' %'; '.join(code_lines), user='hbase')
+        print '.. [DONE]'
 
 def install_hbase_metrics(org='ntropy'):
-    run('wget https://github.com/premal/config/raw/master/hbase/hadoop-metrics.properties -O hadoop-metrics.properties')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing hbase metrics',
+        run('wget https://github.com/premal/config/raw/master/hbase/hadoop-metrics.properties -O hadoop-metrics.properties')
 
-    try:
-        public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
-    except IndexError:
-        public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+        try:
+            public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
+        except IndexError:
+            public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
 
-    code_lines = ["f = open('hadoop-metrics.properties').read()",
-                  "out = f.replace('REPLACE_WITH_GANGLIA_MASTER', '%s')" %public_dns_name,
-                  "f = open('/usr/lib/hbase/conf/hadoop-metrics.properties', 'w')",
-                  "f.write(out)",
-                  "f.close()"]
-    sudo('python -c "%s"' %'; '.join(code_lines), user='hbase')
-
-def install_hbase_daemon():
-    sudo('wget https://github.com/premal/config/raw/master/hbase/hbase-daemon.sh -O /usr/lib/hbase/bin/hbase-daemon.sh', user='hbase')
-
-########################## HDFS ##########################
-def install_hadoop_config(org='ntropy'):
-    install_hadoop_env(org=org)
-    install_hdfs_site(org=org)
-    install_core_site(org=org)
-    install_hdfs_master(org=org)
-    install_hdfs_slaves(org=org)
-    install_hadoop_metrics(org=org)
-    install_hadoop_daemon()
-    install_hadoop_symlinks()
-    install_monitoring_config('hadoop', 'namenode')
-    install_monitoring_config('hadoop', 'datanode')
-
-def install_hadoop_env(org='ntropy'):
-    sudo('wget https://github.com/premal/config/raw/master/hadoop/hadoop-env.sh -O /usr/lib/hadoop/conf/hadoop-env.sh', user='hadoop')
-
-def install_hdfs_site(org='ntropy'):
-    sudo('wget https://github.com/premal/config/raw/master/hadoop/hdfs-site.xml -O /usr/lib/hadoop/conf/hdfs-site.xml', user='hadoop')
-
-def install_core_site(org='ntropy'):
-    run('wget https://github.com/premal/config/raw/master/hadoop/core-site.xml -O core-site.xml')
-
-    try:
-        public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
-    except IndexError:
-        public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
-
-    code_lines = ["f = open('core-site.xml').read()",
-                  "out = f.replace('REPLACE_WITH_NAMENODE', '%s')" %public_dns_name,
-                  "f = open('/usr/lib/hadoop/conf/core-site.xml', 'w')",
-                  "f.write(out)",
-                  "f.close()"]
-    sudo('python -c "%s"' %'; '.join(code_lines), user='hadoop')
-
-def install_hdfs_master(org='ntropy'):
-    try:
-        public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
-    except IndexError:
-        public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
-
-    code_lines = ["f = open('/usr/lib/hadoop/conf/master', 'w')",
-                  "f.write('%s')" %public_dns_name,
-                  "f.close()"]
-    sudo('python -c "%s"' %'; '.join(code_lines), user='hadoop')
-
-def install_hdfs_slaves(org='ntropy'):
-    instances = aws.get_instances(service_type='hbase', org=org, state='running', slave=True)
-    datanodes = '\n'.join([x.public_dns_name for x in instances])
-
-    if not datanodes:
-        datanodes = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
-
-    code_lines = ["f = open('/usr/lib/hadoop/conf/slaves', 'w')",
-                  "f.write('''%s''')" %datanodes,
-                  "f.close()"]
-    sudo('python -c "%s"' %'; '.join(code_lines), user='hadoop')
-
-def install_hadoop_metrics(org='ntropy'):
-    run('wget https://github.com/premal/config/raw/master/hadoop/hadoop-metrics2.properties -O hadoop-metrics2.properties')
-
-    try:
-        public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
-    except IndexError:
-        public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
-
-    code_lines = ["f = open('hadoop-metrics2.properties').read()",
-                  "out = f.replace('REPLACE_WITH_GANGLIA_MASTER', '%s')" %public_dns_name,
-                  "f = open('/usr/lib/hadoop/conf/hadoop-metrics2.properties', 'w')",
-                  "f.write(out)",
-                  "f.close()"]
-    sudo('python -c "%s"' %'; '.join(code_lines), user='hadoop')
-
-def install_hadoop_daemon():
-    sudo('wget https://github.com/premal/config/raw/master/hadoop/hadoop-daemon.sh -O /usr/lib/hadoop/bin/hadoop-daemon.sh', user='hadoop')
-
-def install_hadoop_symlinks():
-    sudo('ln -s /usr/lib/hadoop/logs /var/log/hadoop')
+        code_lines = ["f = open('hadoop-metrics.properties').read()",
+                      "out = f.replace('REPLACE_WITH_GANGLIA_MASTER', '%s')" %public_dns_name,
+                      "f = open('/usr/lib/hbase/conf/hadoop-metrics.properties', 'w')",
+                      "f.write(out)",
+                      "f.close()"]
+        sudo('python -c "%s"' %'; '.join(code_lines), user='hbase')
+        print '.. [DONE]'
 
 #################################################################################
 # HBASE SERVICES
@@ -1645,7 +1822,10 @@ def start_hbase(org='ntropy'):
 
 def __start_hbase(org='ntropy'):
     with cd('/usr/lib/hbase'):
-        run('sudo -u hbase bin/start-hbase.sh')
+        with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+            print 'Starting hbase',
+            run('sudo -u hbase bin/start-hbase.sh')
+            print '.. [DONE]'
 
 def stop_hbase(org='ntropy'):
     env.hosts = get_hosts(org=org, service_type='hbase', state='running', master=True)
@@ -1655,7 +1835,10 @@ def stop_hbase(org='ntropy'):
 
 def __stop_hbase():
     with cd('/usr/lib/hbase'):
-        run('sudo -u hbase bin/stop-hbase.sh')
+        with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+            print 'Stopping hbase',
+            run('sudo -u hbase bin/stop-hbase.sh')
+            print '.. [DONE]'
 
 def restart_hbase(org='ntropy'):
     env.hosts = get_hosts(org=org, service_type='hbase', state='running', master=True)
@@ -1664,82 +1847,39 @@ def restart_hbase(org='ntropy'):
             __restart_hbase()
 
 def __restart_hbase(org='ntropy'):
-    __stop_hbase()
-    __start_hbase()
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Restarting hbase',
+        __stop_hbase()
+        __start_hbase()
+        print '.. [DONE]'
 
 def start_regionserver():
     with cd('/usr/lib/hbase'):
-        run('sudo -u hbase bin/hbase-daemon.sh start regionserver')
+        with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+            print 'Starting regionserver',
+            run('sudo -u hbase bin/hbase-daemon.sh start regionserver')
+            print '.. [DONE]'
 
 def stop_regionserver():
     with cd('/usr/lib/hbase'):
-        run('sudo -u hbase bin/hbase-daemon.sh stop regionserver')
+        with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+            print 'Stopping regionserver',
+            run('sudo -u hbase bin/hbase-daemon.sh stop regionserver')
+            print '.. [DONE]'
 
 def restart_regionserver():
-    stop_regionserver()
-    start_regionserver()
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Restarting regionserver',
+        stop_regionserver()
+        start_regionserver()
+        print '.. [DONE]'
 
 def kill_hbase(org="ntropy"):
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        run('sudo pkill -f hbase')
-
-#################################################################################
-# HBASE HDFS SERVICES
-#################################################################################
-def format_namenode(service_type, org='ntropy'):
-    env.hosts = get_hosts(org=org, service_type=service_type, state='running', master=True)
-    for host in env.hosts:
-        with(settings(host_string=host)):
-            __format_namenode()
-
-def __format_namenode():
-    with cd('/usr/lib/hadoop'):
-        run('echo Y | sudo -u hadoop bin/hadoop namenode -format')
-
-def start_namenode(org='ntropy'):
-    env.hosts = get_hosts(org=org, state='running', master=True)
-    for host in env.hosts:
-        with(settings(host_string=host)):
-            __start_namenode()
-
-def __start_namenode():
-    sudo('/usr/lib/hadoop/bin/start-dfs.sh', user='hadoop')
-
-    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-        result = run('/usr/lib/hadoop/bin/hadoop fs -ls /hbase')
-
-    if result.failed:
-        sudo('/usr/lib/hadoop/bin/hadoop fs -mkdir /hbase', user='hadoop')
-        sudo('/usr/lib/hadoop/bin/hadoop fs -chown -R hbase:hbase /hbase', user='hadoop')
-
-def stop_namenode(org='ntropy'):
-    env.hosts = get_hosts(org=org, state='running', master=True)
-    for host in env.hosts:
-        with(settings(host_string=host)):
-            __stop_namenode()
-
-def __stop_namenode():
-    sudo('/usr/lib/hadoop/bin/stop-dfs.sh', user='hadoop')
-
-def restart_namenode(org='ntropy'):
-    env.hosts = get_hosts(org=org, state='running', master=True)
-    for host in env.hosts:
-        with(settings(host_string=host)):
-            __restart_namenode()
-
-def __restart_namenode():
-    __stop_namenode()
-    __start_namenode()
-
-def start_datanode(org='ntropy'):
-    sudo('/usr/lib/hadoop/bin/hadoop-daemon.sh start datanode', user='hadoop')
-
-def stop_datanode(org='ntropy'):
-    sudo('/usr/lib/hadoop/bin/hadoop-daemon.sh stop datanode', user='hadoop')
-
-def restart_datanode(org='ntropy'):
-    stop_datanode(org=org)
-    start_datanode(org=org)
+        with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+            print 'Killing hbase .. please avoid',
+            run('sudo pkill -f hbase')
+            print '.. [DONE]'
 
 #################################################################################
 # CREATE SERVERS

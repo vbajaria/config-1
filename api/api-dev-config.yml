@@ -1,7 +1,7 @@
 hbase:
     zookeeper:
         hosts:
-            - localhost
+            - REPLACE_WITH_ZOOKEEPER_SERVERS
         port: 2181
         connectionTimeout: 10s
         sessionTimeout: 10s
@@ -54,7 +54,7 @@ authenticationCachePolicy: maximumSize=10000, expireAfterAccess=10m
 kafka:
     zookeeper:
         hosts:
-            - localhost
+            - REPLACE_WITH_ZOOKEEPER_SERVERS
         port: 2181
         connectionTimeout: 10s
         sessionTimeout: 10s

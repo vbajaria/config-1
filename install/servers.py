@@ -1,6 +1,7 @@
 import boto, os, aws, time, re, socket
 from fabric.api import *
 from fabric.context_managers import *
+from fabric.exceptions import NetworkError
 
 HOME = os.getenv('HOME')
 env.user = 'ubuntu'
@@ -9,9 +10,13 @@ env.key_filename = ['%s/.ssh/Ntropy1.pem' %HOME]
 #################################################################################
 # CREATE CLUSTER
 #################################################################################
-def setup_uber_server(org='ntropy'):
+def setup_uber_server():
     install_basic_software()
-    setup_mysql_server(uber=True)
+    install_mailutils()
+    install_mysql()
+    install_monit()
+    stop_monit()
+
     setup_beacon_server(uber=True)
     setup_api_server(uber=True)
     setup_frontend_server(uber=True)
@@ -21,51 +26,69 @@ def setup_uber_server(org='ntropy'):
     setup_hadoop_server(uber=True)
     setup_hbase_server(uber=True)
 
+def configure_uber_server(org, environment):
+    __validate_environment(environment)
+
+    install_monit_config()
+    stop_monit()
+
+    install_zookeeper_config(org=org)
+    install_kafka_config(org=org)
+    install_storm_code_config(org=org)
+    install_hadoop_config(org=org)
+    install_hbase_config(org=org)
+    install_beacon_code_config(environment, org=org)
+    install_api_code_config(environment, org=org)
+    install_frontend_config(org=org)
+
+    update_mail_config()
+    format_ebs()
+
+def start_uber_server_services(org):
+    pass
+
 def __validate_environment(environment):
     if environment not in ['dev', 'prod']:
         raise ValueError, "Environment can be only dev or prod"
     
-def install_uber_config(environment, org='ntropy'):
-    __validate_environment(environment)
-
-
 #################################################################################
-# MAIL
+# EBS
 #################################################################################
-def install_mailutils():
-    sudo('apt-get -y install mailutils')
-
-def update_mail_config(hostname):
-    pass
+def format_ebs():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        sys.stdout.write('Formatting EBS Volume')
+        sudo('mkfs -t ext4 /dev/xvdb')
+        sudo('mkdir -p /gd')
+        sudo('mount /dev/xvdb /gd')
+        config_line = '/dev/xvdb       /gd    auto    defaults,nobootwait,comment=cloudconfig 0       2'
+        install_update_config()
+        sudo('python update_config.py /etc/fstab "%s"' %config_line)
+        sys.stdout.write('.. [DONE]\n')
 
 #################################################################################
 # ENV.HOSTS
 #################################################################################
-def get_hosts(org='ntropy', service_type=None, state=None, master=False, slave=False, remote=True):
-    if remote:
-        return [x.public_dns_name for x in aws.get_instances(
-            service_type=service_type, org=org, state=state, master=master, slave=slave)]
-    else:
-        return ['localhost']
+def get_hosts(org='ntropy', service=None, state=None, master=False, slaves=False):
+    instances = aws.get_instances(service=service, org=org, state=state, master=master, slaves=slaves)
+    return [x.public_dns_name for x in instances]
 
-def set_hosts(org='ntropy', service_type=None, state='running', master=False, slave=False, remote=True):
-    env.hosts = get_hosts(org=org, service_type=service_type, state=state, master=master, slave=slave, remote=remote)
-    print env.hosts
+def get_host_by_ip(ip, org='ntropy'):
+    instance = None
+    for i in get_hosts(org=org):
+        if instance.ip_address == ip:
+            instance = i
+            break
+    return instance
 
-#################################################################################
-# PUSH DATA
-#################################################################################
-def install_push_script():
-    put('/home/premal/push_test_data.py', '/home/ubuntu/')
+def is_master(org='ntropy'):
+    ip = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+    instance = get_host_by_ip(ip, org=org)
+    if instance.tags.get('Type', '') == 'master':
+        return True
+    return False
 
-def run_push_script(endpoint, token, t=None):
-    if t:
-        run('nohup sh -c "python push_test_data.py %s %s %s &"' %(endpoint, token, t))
-    else:
-        run('nohup sh -c "python push_test_data.py %s %s &"' %(endpoint, token))
-
-def kill_push_script():
-    sudo('pkill -f push_test_data.py')
+def set_hosts(org='ntropy', service=None, state='running', master=False, slaves=False):
+    env.hosts = get_hosts(org=org, service=service, state=state, master=master, slaves=slaves)
 
 #################################################################################
 # APT-GET
@@ -82,9 +105,10 @@ def install_apt_sources():
         sudo('wget https://raw.github.com/premal/config/master/apt/mkpasswd.sources.list -O /etc/apt/sources.list.d/mkpasswd.sources.list')
         print '.. [DONE]'
 
-def install_basic_software():
+def install_basic_software(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
         install_apt_sources()
+
         apt_get_update()
 
         print 'Installing htop iotop sysstat git mkpasswd ntp locate liblzo2-dev',
@@ -95,10 +119,6 @@ def install_basic_software():
 
         print 'Installing ssh config',
         install_ssh_config()
-        print '.. [DONE]'
-
-        print 'Installing /etc/hosts',
-        install_etc_hosts()
         print '.. [DONE]'
 
 #################################################################################
@@ -118,15 +138,15 @@ def install_etc_hosts(org='ntropy'):
     for instance in aws.get_instances(org=org, state='running'):
         etc_hosts.append(('%s\t%s %s' %(instance.private_ip_address, instance.public_dns_name, instance.private_dns_name)))
 
-    code_lines = ["f = open('etc_hosts').read()" ,
-                  "out = f.replace('REPLACE_WITH_HOSTS', '''%s''')" %'\n'.join(etc_hosts),
-                  "f = open('/etc/hosts', 'w')",
-                  "f.write(out)",
-                  "f.close()"]
+    code = ["f = open('etc_hosts').read()" ,
+            "out = f.replace('REPLACE_WITH_HOSTS', '''%s''')" %'\n'.join(etc_hosts),
+            "f = open('/etc/hosts', 'w')",
+            "f.write(out)",
+            "f.close()"]
 
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Updating hosts file',
-        sudo('python -c "%s"' %'; '.join(code_lines))
+        sudo('python -c "%s"' %'; '.join(code))
         print '.. [DONE]'
 
 #################################################################################
@@ -169,19 +189,10 @@ def install_user(username, password):
 
     if result.failed:
         with settings(hide('warnings', 'running', 'stdout', 'stderr')):
-            print 'Creating user: (%s) in group: (%s)' %(username, username)
+            print 'Creating user: (%s) in group: (%s)' %(username, username),
             run('sudo addgroup %s' %username)
             run('sudo useradd %s -g %s -m -s /bin/bash -p `mkpasswd %s`' %(username, username, password))
             print '.. [DONE]'
-
-#################################################################################
-# MONIT
-#################################################################################
-def install_monit():
-    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
-        print 'Installing monit'
-        run('sudo apt-get install -y monit')
-        print '.. [DONE]'
 
 #################################################################################
 # UPDATE CONFIG
@@ -211,19 +222,35 @@ def update_hostname(hostname):
 #################################################################################
 # BASHRC
 #################################################################################
-def install_bashrc(service_type):
+def install_bashrc(service):
     install_update_config()
 
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
-        run('wget https://raw.github.com/premal/config/master/%s/.%src -O /home/ubuntu/.%src' %(service_type, service_type, service_type))
+        run('wget https://raw.github.com/premal/config/master/%s/.%src -O /home/ubuntu/.%src' %(service, service, service))
 
-    code = ["if [ -f .%src ]; then" %service_type,
-            "    . ~/.%src" %service_type,
+    code = ["\nif [ -f .%src ]; then" %service,
+            "    . ~/.%src" %service,
             "fi\n"]
 
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         run('python update_config.py .bashrc "%s"' %'\n'.join(code))        
         run('source /home/ubuntu/.bashrc')
+
+#################################################################################
+# MAIL
+#################################################################################
+def install_mailutils():
+    print 'Installing mailutils',
+    sudo('apt-get -y install mailutils')
+    print '.. [DONE]'
+
+def update_mail_config():
+    install_update_config()
+
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        code = 'myhostname = %s' %run('python -c "import socket; print socket.gethostname()"')    
+        sudo('python update_config.py /etc/postfix/main.cf "%s"' %code)
+        sudo('/etc/init.d/postfix reload')
 
 #################################################################################
 # SECURITY LIMITS
@@ -340,7 +367,12 @@ def install_log_dir(service):
         log_dir = '/var/log/%s' %service
         print 'Creating log directory for %s at %s' %(service, log_dir),
         sudo('mkdir -p %s' %log_dir)
-        sudo('chown -R %s:%s %s' %(service, service, log_dir))
+
+        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+            result = sudo('chown -R %s:%s %s' %(service, service, log_dir))
+        if result.failed:
+            sudo('chmod -R 665 %s' %log_dir)
+
         print '.. [DONE]'
 
 #################################################################################
@@ -376,14 +408,31 @@ def delete_key():
         sudo('rm Ntropy1.pem')
     
 #################################################################################
-# MONITORING
+# MONIT SOFTWARE
+#################################################################################
+def install_monit():
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing monit',
+        run('sudo apt-get install -y monit')
+        print '.. [DONE]'
+
+#################################################################################
+# MONIT CONFIG
 #################################################################################
 def install_monit_config():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Installing monit configuration',
         sudo('wget https://github.com/premal/config/raw/master/monit/monitrc -O /etc/monit/monitrc')
-        sudo('/etc/init.d/monit restart')
         print '.. [DONE]'
+
+def start_monit():
+    sudo('/etc/init.d/monit start')
+    
+def stop_monit():
+    sudo('/etc/init.d/monit stop')
+
+def restart_monit():
+    sudo('/etc/init.d/monit restart')
 
 def install_monitoring_config(service, sub_service=None):
     filename = service
@@ -401,14 +450,23 @@ def install_monitoring_config(service, sub_service=None):
 # MONIT SERVICE
 #################################################################################
 def start_monit():
-    sudo('/etc/init.d/monit start')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Starting monit',
+        sudo('/etc/init.d/monit start')
+        print '.. [DONE]'
 
 def stop_monit():
-    sudo('/etc/init.d/monit stop')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Stopping monit',
+        sudo('/etc/init.d/monit stop')
+        print '.. [DONE]'
 
 def restart_monit():
-    stop_monit()
-    start_monit()
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Restarting monit',
+        stop_monit()
+        start_monit()
+        print '.. [DONE]'
 
 #################################################################################
 # GANGLIA SOFTWARE
@@ -421,16 +479,16 @@ def install_ganglia_dependencies():
 
 def install_ganglia_master():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
-        print 'Installing ganglia',
         install_ganglia_dependencies()
+        print 'Installing ganglia',
         sudo('apt-get -y install ganglia-monitor ganglia-webfrontend gmetad')
         install_ganglia_rrd_dir()
         print '.. [DONE]'
 
 def install_ganglia_slave():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
-        print 'Installing ganglia',
         install_ganglia_dependencies()
+        print 'Installing ganglia',
         sudo('apt-get -y install ganglia-monitor')
         install_ganglia_rrd_dir()
         print '.. [DONE]'
@@ -462,8 +520,8 @@ def install_ganglia_gmond_config(org='ntropy'):
         sudo('wget https://github.com/premal/config/raw/master/ganglia/gmond.conf -O gmond.conf')
         #sudo('wget https://github.com/premal/config/raw/master/ganglia/slave-gmetad.conf -O slave-gmetad.conf')
 
-        master = aws.get_instances(service_type='ganglia', org=org, state='running')[0]
-        hInstances = aws.get_instances(service_type='hbase', org=org, state='running', slave=True)
+        master = aws.get_instances(org=org, state='running', master=True)[0]
+        hInstances = aws.get_instances(org=org, state='running', slaves=True)
         ip_address = run('python -c "import socket, re; print \'\'.join(re.findall(r\'\d+\', socket.gethostbyname(socket.gethostname())))"')
 
         code_lines = ["f = open('gmond.conf').read()",
@@ -546,8 +604,8 @@ def install_java():
         result = run('ls -l /usr/lib/jvm/sun-java6')
 
     if result.failed:
-        print 'Downloading and installing Java'
         with settings(hide('running', 'stdout', 'warnings')):
+            print 'Downloading and installing Java',
             run('wget https://s3.amazonaws.com/bootstrap-software/jdk-6u38-linux-x64.bin -O jdk-6u38-linux-x64.bin')
             run('sudo chmod +x jdk-6u38-linux-x64.bin')
             run('echo -ne \'\n\' |./jdk-6u38-linux-x64.bin')
@@ -561,8 +619,7 @@ def install_java():
             run('sudo update-alternatives --set javaws /usr/lib/jvm/sun-java6/bin/javaws')
             run('rm jdk-6u38-linux-x64.bin')
             run('export JAVA_HOME=/usr/lib/jvm/sun-java6/')
-    else:
-        print 'Java is already installed'
+            print '.. [DONE]'
 
 #################################################################################
 # MYSQL SERVER SOFTWARE SETUP
@@ -580,7 +637,9 @@ def get_mysql_ntropy_pass():
 
 def install_mysql():
     # TODO change this to installing from a binary
-    run('sudo apt-get -y install mysql-server')
+    print 'Installing mysql',
+    sudo('apt-get -y install mysql-server')
+    print '.. [DONE]'
 
 def setup_ntropy_database():
     # TODO change mysql remote host access, not allow %
@@ -590,7 +649,7 @@ def setup_ntropy_database():
     command += 'FLUSH PRIVILEGES;'
     run('mysql -u root -p%s -e "%s"' %(get_mysql_root_pass(), command))
 
-def install_mysql_config(org='ntropy', branch='master', checkout=True):
+def install_mysql_config(org='ntropy', branch='master'):
     install_code()
     pull_code(branch)
     run('sudo cp /var/ntropy/conf/mysql/mysql-master.my.cnf /etc/mysql/my.cnf')
@@ -611,6 +670,9 @@ def setup_beacon_server(uber=False):
     if not uber:
         install_basic_software()
     install_java()
+    install_service_config()
+    install_initd(service='beacon')
+    install_log_dir('beacon')
 
 #################################################################################
 # BEACON SERVERS CODE AND CONFIG SETUP
@@ -619,13 +681,10 @@ def install_beacon_code_config(environment, org='ntropy'):
     __validate_environment(environment)
 
     install_beacon_jar()
-    install_beacon_config(environment)
+    install_beacon_config(environment, org=org)
 
     if org in ['ntropy', 'grepdata']:
         install_beacon_https_cert()
-
-    install_service_config()
-    install_initd(service='beacon')
 
     if environment == 'dev':
         install_monitoring_config('beacon', 'dev')
@@ -633,22 +692,14 @@ def install_beacon_code_config(environment, org='ntropy'):
         install_monitoring_config('beacon', 'prod')
         install_monitoring_config('beacon', 'prod-https')
 
-    install_etc_hosts(org=org)
-
 def install_beacon_jar():
     install_key()
 
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
-        print 'Installing Code',
+        print 'Installing beacon server code',
         run('scp -i Ntropy1.pem kickstart.grepdata.com:/var/ntropy/dataapi/target/dataapi-0.1.jar .')
         sudo('mkdir -p /usr/lib/beacon')
         sudo('cp dataapi-0.1.jar /usr/lib/beacon/dataapi-0.1.jar')
-        print '.. [DONE]'
-
-        log_dir = '/var/log/beacon'
-        print 'Creating log directory at %s' %log_dir,
-        sudo('mkdir -p %s' %log_dir)
-        sudo('chmod -R 777 %s' %log_dir)
         print '.. [DONE]'
 
     delete_key()
@@ -660,20 +711,17 @@ def install_beacon_config(environment, org='ntropy'):
 
         if environment == 'dev':
             config_files = ['beacon-dev']
-            sudo('wget https://github.com/premal/config/raw/master/beacon/beacon-dev-config.yml -O beacon-dev-config.yml')
-
-            zkServers = 'localhost'
+            run('wget https://github.com/premal/config/raw/master/beacon/beacon-dev-config.yml -O beacon-dev-config.yml')
         elif environment == 'prod':
             config_files = ['beacon-prod', 'beacon-prod-https']
-            sudo('wget https://github.com/premal/config/raw/master/beacon/beacon-prod-config.yml -O beacon-prod-config.yml')
-            sudo('wget https://github.com/premal/config/raw/master/beacon/beacon-prod-https-config.yml -O beacon-prod-https-config.yml')
+            run('wget https://github.com/premal/config/raw/master/beacon/beacon-prod-config.yml -O beacon-prod-config.yml')
+            run('wget https://github.com/premal/config/raw/master/beacon/beacon-prod-https-config.yml -O beacon-prod-https-config.yml')
 
-            instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
-            zkServers = '\n            - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
-
-            if not instances:
-                # default to localhost
-                zkServers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+        instances = aws.get_instances(org=org, state='running', service='zookeeper')
+        if not instances:
+            ip = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            instances = [get_host_by_ip(ip, org=org)]
+        zkServers = '\n            - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
 
         for config_file in config_files:
             code_lines = ["f = open('%s-config.yml').read()" %config_file,
@@ -694,28 +742,28 @@ def install_beacon_https_cert():
 #################################################################################
 # BEACON SERVERS SERVICES
 #################################################################################
-def __validate_beacon_service_type(service_type):
-    if service_type not in ['beacon-dev', 'beacon-prod', 'beacon-prod-https']:
+def __validate_beacon_service(service):
+    if service not in ['beacon-dev', 'beacon-prod', 'beacon-prod-https']:
         raise ValueError, "Valid values are beacon-dev, beacon-prod and beacon-prod-https"
 
-def start_beacon_server(service_type):
-    __validate_beacon_service_type(service_type)
+def start_beacon_server(service):
+    __validate_beacon_service(service)
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Starting beacon service',
-        sudo('nohup sh -c "/etc/init.d/beacon %s start &"' %(service_type))
+        sudo('nohup sh -c "/etc/init.d/beacon %s start &"' %(service))
         print '.. [DONE]'
 
-def stop_beacon_server(service_type):
-    __validate_beacon_service_type(service_type)
+def stop_beacon_server(service):
+    __validate_beacon_service(service)
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Stopping beacon service',
-        sudo('/etc/init.d/beacon %s stop' %(service_type))
+        sudo('/etc/init.d/beacon %s stop' %(service))
         print '.. [DONE]'
 
-def restart_beacon_server(service_type):
-    __validate_beacon_service_type(service_type)
-    stop_beacon_server(service_type)
-    start_beacon_server(service_type)
+def restart_beacon_server(service):
+    __validate_beacon_service(service)
+    stop_beacon_server(service)
+    start_beacon_server(service)
 
 #################################################################################
 # API SERVER SOFTWARE
@@ -724,6 +772,9 @@ def setup_api_server(uber=False):
     if not uber:
         install_basic_software()
     install_java()
+    install_service_config()
+    install_initd(service='api')
+    install_log_dir('api')
 
 #################################################################################
 # API SERVERS CODE AND CONFIG SETUP
@@ -732,13 +783,10 @@ def install_api_code_config(environment, org='ntropy'):
     __validate_environment(environment)
 
     install_api_jar()
-    install_api_config(environment)
+    install_api_config(environment, org=org)
 
     if org in ['ntropy', 'grepdata']:
         install_api_https_cert()
-
-    install_service_config()
-    install_initd(service='api')
 
     if environment == 'dev':
         install_monitoring_config('api', 'dev')
@@ -746,22 +794,14 @@ def install_api_code_config(environment, org='ntropy'):
         install_monitoring_config('api', 'prod')
         install_monitoring_config('api', 'prod-https')
 
-    install_etc_hosts(org=org)
-
 def install_api_jar():
     install_key()
 
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
-        print 'Installing Code',
+        print 'Installing api server code',
         run('scp -i Ntropy1.pem kickstart.grepdata.com:/var/ntropy/dataapi/target/dataapi-0.1.jar .')
         sudo('mkdir -p /usr/lib/api')
         sudo('cp dataapi-0.1.jar /usr/lib/api/dataapi-0.1.jar')
-        print '.. [DONE]'
-
-        log_dir = '/var/log/api'
-        print 'Creating log directory at %s' %log_dir,
-        sudo('mkdir -p %s' %log_dir)
-        sudo('chmod -R 777 %s' %log_dir)
         print '.. [DONE]'
 
     delete_key()
@@ -773,20 +813,17 @@ def install_api_config(environment, org='ntropy'):
 
         if environment == 'dev':
             config_files = ['api-dev']
-            sudo('wget https://github.com/premal/config/raw/master/api/api-dev-config.yml -O api-dev-config.yml')
-
-            zkServers = 'localhost'
+            run('wget https://github.com/premal/config/raw/master/api/api-dev-config.yml -O api-dev-config.yml')
         elif environment == 'prod':
             config_files = ['api-prod', 'api-prod-https']
-            sudo('wget https://github.com/premal/config/raw/master/api/api-prod-config.yml -O api-prod-config.yml')
-            sudo('wget https://github.com/premal/config/raw/master/api/api-prod-https-config.yml -O api-prod-https-config.yml')
+            run('wget https://github.com/premal/config/raw/master/api/api-prod-config.yml -O api-prod-config.yml')
+            run('wget https://github.com/premal/config/raw/master/api/api-prod-https-config.yml -O api-prod-https-config.yml')
 
-            instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
-            zkServers = '\n            - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
-
-            if not instances:
-                # default to localhost
-                zkServers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+        instances = aws.get_instances(org=org, state='running', service='zookeeper')
+        if not instances:
+            ip = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            instances = [get_host_by_ip(ip, org=org)]
+        zkServers = '\n            - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
 
         for config_file in config_files:
             code_lines = ["f = open('%s-config.yml').read()" %config_file,
@@ -807,28 +844,28 @@ def install_api_https_cert():
 #################################################################################
 # API SERVER SERVICES
 #################################################################################
-def _validate_service_type(service_type):
-    if service_type not in ['api-dev', 'api-prod-https']:
+def _validate_service(service):
+    if service not in ['api-dev', 'api-prod-https']:
         raise ValueError, "Valid values are api-dev and api-prod-https"
 
-def start_api_server(service_type):
-    _validate_service_type(service_type)
+def start_api_server(service):
+    _validate_service(service)
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Starting api service',
-        sudo('nohup sh -c "/etc/init.d/api %s start &"' %(service_type))
+        sudo('nohup sh -c "/etc/init.d/api %s start &"' %(service))
         print '.. [DONE]'
 
-def stop_api_server(service_type):
-    _validate_service_type(service_type)
+def stop_api_server(service):
+    _validate_service(service)
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Stopping api service',
-        sudo('/etc/init.d/api %s stop' %(service_type))
+        sudo('/etc/init.d/api %s stop' %(service))
         print '.. [DONE]'
 
-def restart_api_server(service_type):
-    _validate_service_type(service_type)
-    stop_api_server(service_type)
-    start_api_server(service_type)
+def restart_api_server(service):
+    _validate_service(service)
+    stop_api_server(service)
+    start_api_server(service)
 
 #################################################################################
 # FRONTEND SERVER SOFTWARE SETUP
@@ -853,23 +890,26 @@ def install_django():
         result = run('python -c "import django;"')
 
     if result.failed:
-        print 'Installing Django',
-        run('wget https://s3.amazonaws.com/bootstrap-software/Django-1.4.3.tar.gz -O Django-1.4.3.tar.gz')
-        run('tar xzf Django-1.4.3.tar.gz')
-        with cd('Django-1.4.3'):
-            run('sudo python setup.py install')
-        run('rm Django-1.4.3.tar.gz')
-        run('sudo rm -rf Django-1.4.3')
-        print '.. [DONE]'
+        with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+            print 'Installing django',
+            run('wget https://s3.amazonaws.com/bootstrap-software/Django-1.4.3.tar.gz -O Django-1.4.3.tar.gz')
+            run('tar xzf Django-1.4.3.tar.gz')
+            with cd('Django-1.4.3'):
+                run('sudo python setup.py install')
+            run('rm Django-1.4.3.tar.gz')
+            run('sudo rm -rf Django-1.4.3')
+            print '.. [DONE]'
 
 def install_tastypie():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Installing tastypie',
         sudo('apt-get -y install python-pip')
-        sudo('wget https://pypi.python.org/packages/source/d/django-tastypie/django-tastypie-0.9.11.tar.gz -O django-tastypie-0.9.11.tar.gz')
-        sudo('tar xvzf django-tastypie-0.9.11.tar.gz')
+        run('wget https://pypi.python.org/packages/source/d/django-tastypie/django-tastypie-0.9.11.tar.gz -O django-tastypie-0.9.11.tar.gz')
+        run('tar xvzf django-tastypie-0.9.11.tar.gz')
         with cd('django-tastypie-0.9.11'):
             sudo('python setup.py install')
+        run('rm django-tastypie-0.9.11.tar.gz')
+        run('rm -rf django-tastypie-0.9.11')
         print '.. [DONE]'
 
 def install_python_mysqldb():
@@ -885,6 +925,8 @@ def install_frontend_config(org='ntropy'):
     install_nginx_config()
     install_sitecustomize()
     install_django_config()
+    install_code()
+    pull_code('develop')
     install_django_settings(org=org)
 
 def install_nginx_config():
@@ -933,7 +975,7 @@ def install_django_settings(org='ntropy'):
         run('wget https://github.com/premal/config/raw/master/frontend/django_settings.py -O django_settings.py')
         
         try:
-            mysql_master_ip = aws.get_instances(service_type='mysql', org=org, state='running')[0].private_ip_address
+            mysql_master_ip = aws.get_instances(org=org, state='running', service='mysql')[0].private_ip_address
         except IndexError:
             mysql_master_ip = 'localhost'
 
@@ -965,9 +1007,8 @@ def setup_zookeeper_server(uber=False):
     install_user('zookeeper', 'zookeeper')
     install_zookeeper()
 
-    install_bashrc(service_type='zookeeper')
-    install_monitoring_config(service='zookeeper')
-    install_data_dir('/grepdata', 'zookeeper')
+    install_bashrc(service='zookeeper')
+    install_data_dir('grepdata', 'zookeeper')
     install_log_dir('zookeeper')
 
 def install_zookeeper():
@@ -976,7 +1017,7 @@ def install_zookeeper():
 
     if result.failed:
         with settings(hide('warnings', 'running', 'stdout', 'stderr')):
-            print 'Installing Zookeeper'
+            print 'Installing Zookeeper',
             run('wget https://s3.amazonaws.com/bootstrap-software/zookeeper-3.4.5.tar.gz -O zookeeper-3.4.5.tar.gz')
             sudo('mv zookeeper-3.4.5.tar.gz /usr/lib/')
 
@@ -993,8 +1034,8 @@ def install_zookeeper():
 #################################################################################
 def install_zookeeper_config(org='ntropy'):
     install_zkEnv()
-    install_zoo_cfg('/grepdata/zookeeper', org=org)
-    install_etc_hosts(org=org)
+    install_zoo_cfg(org=org)
+    install_monitoring_config(service='zookeeper')
         
 def install_zkEnv():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
@@ -1003,29 +1044,29 @@ def install_zkEnv():
         sudo('chown zookeeper:zookeeper /usr/lib/zookeeper/bin/zkEnv.sh')
         print '.. [DONE]'
 
-def install_zoo_cfg(data_dir, org='ntropy'):
+def install_zoo_cfg(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Installing zookeeper zoo.cfg',
 
-        sudo('wget https://github.com/premal/config/raw/master/zookeeper/zoo.cfg -O zoo.cfg')
+        run('wget https://github.com/premal/config/raw/master/zookeeper/zoo.cfg -O zoo.cfg')
 
-        zkInstances = aws.get_instances(service_type='zookeeper', org=org, state='running')
-        zkServers = '\n'.join(['server.%s=%s:2888:3888' %(''.join(re.findall(r'\d+', x.ip_address)), x.public_dns_name) for x in zkInstances])
+        zkInstances = aws.get_instances(org=org, state='running', service='zookeeper')
 
         # defaults to localhost
-        if not zkServers:
-            zkServers = 'server.1=%s:2888:3888' %run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+        if not zkInstances:
+            ip_address = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            zkInstances = [get_host_by_ip(ip_address, org=org)]
+
+        zkServers = '\n'.join(['server.%s=%s:2888:3888' %(''.join(re.findall(r'\d+', x.ip_address)), x.public_dns_name) for x in zkInstances])
 
         code_lines = ["f = open('zoo.cfg').read()" ,
-                      "out = f.replace('REPLACE_WITH_DATA_DIR', '''%s''')" %data_dir,
-                      "out = out.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
+                      "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
                       "f = open('/usr/lib/zookeeper/conf/zoo.cfg', 'w')",
                       "f.write(out)",
                       "f.close()"]
         sudo('python -c "%s"' %'; '.join(code_lines), user='zookeeper')
 
         for instance in zkInstances:
-            print ''.join(re.findall(r'\d+', instance.private_ip_address))
             if (''.join(re.findall(r'\d+', instance.private_ip_address)) ==
                 run('python -c "import socket, re; print \'\'.join(re.findall(r\'\d+\', socket.gethostbyname(socket.gethostname())))"')):
                 code_lines = ["f = open('/grepdata/zookeeper/myid', 'w')" ,
@@ -1067,9 +1108,8 @@ def setup_kafka_server(uber=False):
 
     install_service_config()
     install_kafka_daemon()
-    install_bashrc(service_type='kafka')
-    install_monitoring_config(service='kafka')
-    install_data_dir('/grepdata', 'kafka')
+    install_bashrc(service='kafka')
+    install_data_dir('grepdata', 'kafka')
     install_log_dir('kafka')
 
 def install_kafka():
@@ -1094,13 +1134,6 @@ def install_kafka():
                 sudo('./sbt package')
             print '.. [DONE]'
 
-def install_kafka_data_dir(data_dir):
-    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
-        print 'Creating data directory for kafka at %s' %data_dir,
-        sudo('mkdir -p /grepdata/kafka')
-        sudo('chown -R kafka:kafka /grepdata/kafka')
-        print '.. [DONE]'
-
 def install_kafka_log_dir(log_dir):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Creating log directory for kafka at %s' %log_dir,
@@ -1113,7 +1146,7 @@ def install_kafka_log_dir(log_dir):
 #################################################################################
 def install_kafka_config(org='ntropy'):
     install_kafka_properties(org=org)
-    install_etc_hosts(org=org)
+    install_monitoring_config(service='kafka')
 
 def install_kafka_properties(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
@@ -1121,14 +1154,14 @@ def install_kafka_properties(org='ntropy'):
         public_ip = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
         instance_id = 1
 
-        kInstances = aws.get_instances(service_type='kafka', org=org, state='running')
+        kInstances = aws.get_instances(service='kafka', org=org, state='running')
         for instance in kInstances:
             if (''.join(re.findall(r'\d+', instance.private_ip_address)) ==
                 run('python -c "import socket, re; print \'\'.join(re.findall(r\'\d+\', socket.gethostbyname(socket.gethostname())))"')):
                 public_ip = instance.public_dns_name
                 instance_id = int(''.join(re.findall(r'\d+', instance.id)))
 
-        instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+        instances = aws.get_instances(service='zookeeper', org=org, state='running')
         zkServers = ','.join(['%s:2181' %x.public_dns_name for x in instances])
 
         # defaults to localhost
@@ -1148,7 +1181,7 @@ def install_kafka_properties(org='ntropy'):
                          "f.write(out)",
                          "f.close()"]
 
-        sudo('wget https://github.com/premal/config/raw/master/kafka/server.properties -O server.properties')
+        run('wget https://github.com/premal/config/raw/master/kafka/server.properties -O server.properties')
         sudo('python -c "%s"' %'; '.join(zk_code_lines))
         sudo('python -c "%s"' %'; '.join(bk_code_lines))
         sudo('chown kafka:kafka /usr/lib/kafka/config/server.properties')
@@ -1197,15 +1230,11 @@ def setup_storm_server(uber=False):
     install_user('storm', 'storm')
     install_storm()
 
-    install_data_dir('/grepdata', 'storm')
-    install_log_dir('storm')
+    install_data_dir('grepdata', 'storm')
     install_service_config()
-    install_storm_daemon(org=org)
-    install_bashrc(service_type='storm')
+    install_storm_daemon()
+    install_bashrc(service='storm')
     install_storm_symlinks()
-    install_monitoring_config('storm', 'nimbus')
-    install_monitoring_config('storm', 'ui')
-    install_monitoring_config('storm', 'supervisor')
 
 def install_storm_essentials():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
@@ -1252,6 +1281,7 @@ def install_jzmq():
                 sudo('make')
                 sudo('make install')
                 run('touch done.log')
+            run('rm jzmq.tar.gz')
             print '.. [DONE]'
 
 def install_storm():
@@ -1271,7 +1301,7 @@ def install_storm():
                 sudo('chown -R storm:storm /usr/lib/storm')
             print '.. [Done]'
 
-def install_storm_daemon(org='ntropy'):
+def install_storm_daemon():
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Installing storm daemon',
         sudo('wget https://github.com/premal/config/raw/master/storm/init.d -O /etc/init.d/storm')
@@ -1279,9 +1309,9 @@ def install_storm_daemon(org='ntropy'):
         print '.. [DONE]'
 
 def install_storm_symlinks():
-    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
         print 'Installing storm log symlinks',
-        sudo('ln -s /usr/lib/storm/logs/ /var/log/storm')
+        sudo('ln -s /usr/lib/storm/logs /var/log/storm')
         print '.. [DONE]'
 
 #################################################################################
@@ -1289,29 +1319,29 @@ def install_storm_symlinks():
 #################################################################################
 def install_storm_code_config(org='ntropy'):
     install_storm_config(org=org)
-    install_etc_hosts(org=org)
 
-def install_storm_config(data_dir, org='ntropy'):    
+    if is_master(org=org):
+        install_monitoring_config('storm', 'nimbus')
+        install_monitoring_config('storm', 'ui')
+    else:
+        install_monitoring_config('storm', 'supervisor')
+
+def install_storm_config(org='ntropy'):    
     with settings(hide('warnings', 'running', 'stdout', 'stderr')): 
         print 'Installing storm config',
         run('wget https://github.com/premal/config/raw/master/storm/storm.yaml -O storm.yaml')
 
-        instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+        instances = aws.get_instances(service='zookeeper', org=org, state='running')
         zkServers = '\n     - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
 
-        # default to localhost
-        if not instances:
-            zkServers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
-
         try:
-            public_dns_name = aws.get_instances(service_type='storm', org=org, state='running', master=True)[0].public_dns_name
+            public_dns_name = aws.get_instances(service='storm', org=org, state='running', master=True)[0].public_dns_name
         except IndexError:
-            public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            public_dns_name = 'localhost'
 
         code_lines = ["f = open('storm.yaml').read()",
                       "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
                       "out = out.replace('REPLACE_WITH_NIMBUS_SERVER', '%s')" %public_dns_name,
-                      "out = out.replace('REPLACE_WITH_DATA_DIR', '%s')" %data_dir,
                       "f = open('/usr/lib/storm/conf/storm.yaml', 'w')",
                       "f.write(out)",
                       "f.close()"]
@@ -1420,10 +1450,9 @@ def setup_hadoop_server(uber=False):
     install_hadoop()
     install_hdfs_dirs()
 
+    install_bashrc(service='hadoop')
     install_hadoop_daemon()
     install_hadoop_symlinks()
-    install_monitoring_config('hadoop', 'namenode')
-    install_monitoring_config('hadoop', 'datanode')
 
 def install_hadoop():
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
@@ -1461,7 +1490,7 @@ def install_hadoop_daemon():
         print '.. [DONE]'
 
 def install_hadoop_symlinks():
-    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
         print 'Installing hadoop symlinks',            
         sudo('ln -s /usr/lib/hadoop/logs /var/log/hadoop')
         print '.. [DONE]'
@@ -1476,6 +1505,8 @@ def install_hadoop_config(org='ntropy'):
     install_hdfs_master(org=org)
     install_hdfs_slaves(org=org)
     install_hadoop_metrics(org=org)
+    install_monitoring_config('hadoop', 'namenode')
+    install_monitoring_config('hadoop', 'datanode')
 
 def install_hadoop_env(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
@@ -1495,7 +1526,7 @@ def install_core_site(org='ntropy'):
         run('wget https://github.com/premal/config/raw/master/hadoop/core-site.xml -O core-site.xml')
 
         try:
-            public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
+            public_dns_name = aws.get_instances(org=org, state='running', master=True)[0].public_dns_name
         except IndexError:
             public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
 
@@ -1511,7 +1542,7 @@ def install_hdfs_master(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Installing master config',
         try:
-            public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
+            public_dns_name = aws.get_instances(org=org, state='running', master=True)[0].public_dns_name
         except IndexError:
             public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
 
@@ -1524,7 +1555,7 @@ def install_hdfs_master(org='ntropy'):
 def install_hdfs_slaves(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Installing slaves config',
-        instances = aws.get_instances(service_type='hbase', org=org, state='running', slave=True)
+        instances = aws.get_instances(org=org, state='running')
         datanodes = '\n'.join([x.public_dns_name for x in instances])
 
         if not datanodes:
@@ -1542,7 +1573,7 @@ def install_hadoop_metrics(org='ntropy'):
         run('wget https://github.com/premal/config/raw/master/hadoop/hadoop-metrics2.properties -O hadoop-metrics2.properties')
 
         try:
-            public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
+            public_dns_name = aws.get_instances(org=org, state='running', master=True)[0].public_dns_name
         except IndexError:
             public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
 
@@ -1557,17 +1588,17 @@ def install_hadoop_metrics(org='ntropy'):
 #################################################################################
 # HADOOP SERVICES
 #################################################################################
-def format_namenode(service_type, org='ntropy'):
-    env.hosts = get_hosts(org=org, service_type=service_type, state='running', master=True)
+def format_namenode(service, org='ntropy'):
+    env.hosts = get_hosts(org=org, service=service, state='running', master=True)
     for host in env.hosts:
         with(settings(host_string=host)):
             __format_namenode()
 
 def __format_namenode():
-    with cd('/usr/lib/hadoop'):
-        with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        with cd('/usr/lib/hadoop'):
             print 'Formatting namenode',
-            run('echo Y | sudo -u hadoop bin/hadoop namenode -format')
+            sudo('bin/hadoop namenode -format', user='hadoop')
             print '.. [DONE]'
 
 def start_namenode(org='ntropy'):
@@ -1577,17 +1608,18 @@ def start_namenode(org='ntropy'):
             __start_namenode()
 
 def __start_namenode():
-    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
-        print 'Starting namenode',
-        sudo('/usr/lib/hadoop/bin/start-dfs.sh', user='hadoop')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        print 'Starting namenode'
+        with cd('/usr/lib/hadoop'):
+            sudo('bin/start-dfs.sh', user='hadoop')
+        print '.. [DONE]'
 
         with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
-            result = run('/usr/lib/hadoop/bin/hadoop fs -ls /hbase')
+            result = run('hadoop fs -ls /hbase')
 
         if result.failed:
-            sudo('/usr/lib/hadoop/bin/hadoop fs -mkdir /hbase', user='hadoop')
-            sudo('/usr/lib/hadoop/bin/hadoop fs -chown -R hbase:hbase /hbase', user='hadoop')
-        print '.. [DONE]'
+            sudo('hadoop fs -mkdir /hbase', user='hadoop')
+            sudo('hadoop fs -chown -R hbase:hbase /hbase', user='hadoop')
 
 def stop_namenode(org='ntropy'):
     env.hosts = get_hosts(org=org, state='running', master=True)
@@ -1645,8 +1677,9 @@ def setup_hbase_server(uber=False):
     install_hbase()
     install_lzo()
 
+    install_hbase_dirs()
     install_hbase_symlinks()
-    install_bashrc(service_type='hbase')
+    install_bashrc(service='hbase')
     install_hbase_daemon()
     install_monitoring_config('hbase', 'master')
     install_monitoring_config('hbase', 'regionserver')
@@ -1678,7 +1711,7 @@ def install_hbase_dirs():
         print '.. [DONE]'
 
 def install_hbase_symlinks():
-    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
         print 'Installing hbase symlinks',
         sudo('ln -s /usr/lib/hbase/logs /var/log/hbase')
         print '.. [DONE]'
@@ -1735,18 +1768,19 @@ def install_lzo():
         print '.. [DONE]'
 
 def install_hbase_daemon():
-    sudo('wget https://github.com/premal/config/raw/master/hbase/hbase-daemon.sh -O /usr/lib/hbase/bin/hbase-daemon.sh', user='hbase')
+    with settings(hide('warnings', 'running', 'stdout', 'stderr')):
+        print 'Installing hbase daemon',
+        sudo('wget https://github.com/premal/config/raw/master/hbase/hbase-daemon.sh -O /usr/lib/hbase/bin/hbase-daemon.sh', user='hbase')
+        print '.. [DONE]'
 
 #################################################################################
 # HBASE CODE AND CONFIG SETUP
 #################################################################################
 def install_hbase_config(org='ntropy'):
-    install_hdfs_dirs()
     install_hbase_env(org=org)
     install_hbase_site(org=org)
     install_hbase_regionservers(org=org)
     install_security_limits('hbase', org=org)
-    install_etc_hosts(org=org)
 
 def install_hbase_env(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
@@ -1760,8 +1794,8 @@ def install_hbase_site(org='ntropy'):
         run('wget https://github.com/premal/config/raw/master/hbase/hbase-site.xml -O hbase-site.xml')
 
         try:
-            public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
-            instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+            public_dns_name = aws.get_instances(service='hbase', org=org, state='running', master=True)[0].public_dns_name
+            instances = aws.get_instances(service='zookeeper', org=org, state='running')
             zkServers = ','.join(["%s" %x.public_dns_name for x in instances])
         except IndexError:
             # defaults to localhost
@@ -1780,7 +1814,7 @@ def install_hbase_site(org='ntropy'):
 def install_hbase_regionservers(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Installing hbase regionservers',
-        instances = aws.get_instances(service_type='hbase', org=org, state='running', slave=True)
+        instances = aws.get_instances(service='hbase', org=org, state='running')
         regionservers = '\n'.join([x.public_dns_name for x in instances])
 
         if not regionservers:
@@ -1799,7 +1833,7 @@ def install_hbase_metrics(org='ntropy'):
         run('wget https://github.com/premal/config/raw/master/hbase/hadoop-metrics.properties -O hadoop-metrics.properties')
 
         try:
-            public_dns_name = aws.get_instances(service_type='hbase', org=org, state='running', master=True)[0].public_dns_name
+            public_dns_name = aws.get_instances(service='hbase', org=org, state='running', master=True)[0].public_dns_name
         except IndexError:
             public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
 
@@ -1815,7 +1849,7 @@ def install_hbase_metrics(org='ntropy'):
 # HBASE SERVICES
 #################################################################################
 def start_hbase(org='ntropy'):
-    env.hosts = get_hosts(org=org, service_type='hbase', state='running', master=True)
+    env.hosts = get_hosts(org=org, service='hbase', state='running', master=True)
     for host in env.hosts:
         with(settings(host_string=host)):
             __start_hbase()
@@ -1828,7 +1862,7 @@ def __start_hbase(org='ntropy'):
             print '.. [DONE]'
 
 def stop_hbase(org='ntropy'):
-    env.hosts = get_hosts(org=org, service_type='hbase', state='running', master=True)
+    env.hosts = get_hosts(org=org, service='hbase', state='running', master=True)
     for host in env.hosts:
         with(settings(host_string=host)):
             __stop_hbase()
@@ -1841,7 +1875,7 @@ def __stop_hbase():
             print '.. [DONE]'
 
 def restart_hbase(org='ntropy'):
-    env.hosts = get_hosts(org=org, service_type='hbase', state='running', master=True)
+    env.hosts = get_hosts(org=org, service='hbase', state='running', master=True)
     for host in env.hosts:
         with(settings(host_string=host)):
             __restart_hbase()
@@ -1884,136 +1918,54 @@ def kill_hbase(org="ntropy"):
 #################################################################################
 # CREATE SERVERS
 #################################################################################
-def create_mysql_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
-    aws.create_new_instances('mysql', org=org, instance_type=instance_type)
+def create_servers(org, num_instances, instance_type, *services):
+    try:
+        num_instances = int(num_instances)
+    except ValueError:
+        print 'num_instances needs to be an integer'
+        sys.exit(0)
 
-def create_zookeeper_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
-    num_instances = int(num_instances)
-    before_instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
-    aws.create_new_instances('zookeeper', instance_type, org=org, num_instances=num_instances)
-    print 'Waiting 60 seconds for aws to initialize the instances'
-    time.sleep(60)
-    after_instances = aws.get_instances(service_type='zookeeper', org=org, state='running')
+    instance_types = ['t1.micro', 'm1.medium', 'm1.xlarge', 'm3.2xlarge']
+    if instance_type not in instance_types:
+        print 'servers can only be %s' %instance_types
+        sys.exit(0)
 
-    for host in [x.public_dns_name for x in after_instances]:
-        with settings(host_string=host):
-            install_zookeeper_config(org=org, branch=branch)
+    valid_services = ['beacon', 'api', 'frontend', 'zookeeper', 'storm', 'kafka', 'hadoop', 'hbase', 'mysql']
+    d = dict(zip(valid_services, valid_services))
+    for service in services:
+        if not d.has_key(service):
+            print '%s is not a valid service. valid services are %s' %(service, valid_services)
+            sys.exit(0)
+
+    before_instances = aws.get_instances(org=org, state='running')
+    aws.create_new_instances(org, num_instances, instance_type, *services)
+    after_instances = []
+
+    retry_count = 0
+    while retry_count < 10:
+        after_instances = aws.get_instances(org=org, state='running')
+        if after_instances:
+            break
+        else:
+            retry_count += 1
+            time.sleep(5)
+            continue
+
+    print before_instances, after_instances
 
     for instance in after_instances:
         if instance.id in [x.id for x in before_instances]:
             continue
         with settings(host_string=instance.public_dns_name):
-            start_zookeeper()
-
-def create_kafka_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
-    num_instances = int(num_instances)
-    before_instances = aws.get_instances(service_type='kafka', org=org, state='running')
-    aws.create_new_instances('kafka', instance_type, org=org, num_instances=num_instances)
-    print 'Waiting 60 seconds for aws to initialize the instances'
-    time.sleep(60)
-    after_instances = aws.get_instances(service_type='kafka', org=org, state='running')
-    for instance in after_instances:
-        if instance.id in [x.id for x in before_instances]:
-            continue
-        with settings(host_string=instance.public_dns_name):
-            install_kafka_config(org=org, branch=branch)
-            start_kafka()
-        aws.add_instances_to_loadbalancer(service_type='kafka', instances=[instance], org='ntropy')
-
-def create_beacon_web_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
-    num_instances = int(num_instances)
-    before_instances = aws.get_instances(service_type='beacon-web', org=org, state='running')
-    aws.create_new_instances('beacon-web', instance_type, org=org, num_instances=num_instances)
-    print 'Waiting 120 seconds for aws to initialize the instances'
-    time.sleep(120)
-    after_instances = aws.get_instances(service_type='beacon-web', org=org, state='running')
-    for instance in after_instances:
-        if instance.id in [x.id for x in before_instances]:
-            continue
-        with settings(host_string=instance.public_dns_name):
-            install_beacon_web_code_config(org=org, branch=branch)
-            restart_beacon_web()
-        #aws.add_instances_to_loadbalancer(service_type='beacon-web', instances=[instance], org='ntropy')
-
-"""
-def create_frontend_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
-    num_instances = int(num_instances)
-    before_instances = aws.get_instances(service_type='frontend', org=org, state='running')
-    aws.create_new_instances('frontend', instance_type, org=org, num_instances=num_instances)
-    print 'Waiting 120 seconds for aws to initialize the instances'
-    time.sleep(120)
-    after_instances = aws.get_instances(service_type='frontend', org=org, state='running')
-    for instance in after_instances:
-        if instance.id in [x.id for x in before_instances]:
-            continue
-        with settings(host_string=instance.public_dns_name):
-            install_beacon_web_code_config(org=org, branch=branch)
-            restart_beacon_web()
-        aws.add_instances_to_loadbalancer(service_type='frontend', instances=[instance], org='ntropy')
-"""
-
-def create_storm_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
-    num_instances = int(num_instances)
-
-    before_instances = aws.get_instances(service_type='storm', org=org, state='running')
-    aws.create_new_instances('storm', instance_type, org=org, num_instances=num_instances)
-
-    print 'Waiting 120 seconds for aws to initialize the instances'
-    time.sleep(120)
-
-    after_instances = aws.get_instances(service_type='storm', org=org, state='running')
-
-    for instance in after_instances:
-        if instance.id in [x.id for x in before_instances]:
-            continue
-        with settings(host_string=instance.public_dns_name):
-            install_storm_code_config(org=org, branch=branch)
-            if instance.tags.get('Name2').endswith('master'):
-                start_storm_master()
-            elif instance.tags.get('Name2').endswith('slave'):
-                start_storm_worker()
-
-def create_hbase_servers(org='ntropy', num_instances=1, instance_type='t1.micro', branch='master'):
-    num_instances = int(num_instances)
-
-    before_instances = aws.get_instances(service_type='hbase', org=org, state='running')
-    aws.create_new_instances('hbase', instance_type, org=org, num_instances=num_instances)
-
-    print 'Waiting 120 seconds for aws to initialize the instances'
-    time.sleep(120)
-
-    after_instances = aws.get_instances(service_type='hbase', org=org, state='running')
-
-    instance_volumes = []
-    for instance in after_instances:
-        if instance.id in [x.id for x in before_instances]:
-            continue
-        with settings(host_string=instance.public_dns_name):
-            install_hbase_hdfs_config(org=org, branch=branch)
-
-    print before_instances
-    print after_instances
-
-    # master starts datanodes and regionservers.
-    # so when slaves are getting initialized with the master,
-    # then don't need to start the slave processes separately
-    master_started = False
-    for instance in after_instances:
-        if instance.id in [x.id for x in before_instances]:
-            continue
-
-        if instance.tags.get('Name2').endswith('master'):
-            with settings(host_string=instance.public_dns_name):
-                __format_namenode()
-                __start_namenode()
-                __start_hbase()
-                master_started = True
-
-        elif instance.tags.get('Name2').endswith('slave'):
-            if master_started:
-                continue
-            with settings(host_string=instance.public_dns_name):
-                pass
-                start_datanode()
-                start_regionserver()
+            retry_count = 0
+            while retry_count < 10:
+                try:
+                    configure_uber_server(org, 'dev')
+                    print ''
+                    break
+                except NetworkError:
+                    print 'Instance not ready yet. Retrying'
+                    time.sleep(10)
+                    retry_count += 1
+                    continue
 

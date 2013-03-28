@@ -74,18 +74,19 @@ def get_hosts(org='ntropy', service=None, state=None, master=False, slaves=False
 
 def get_host_by_ip(ip, org='ntropy'):
     instance = None
-    for i in get_hosts(org=org):
-        if instance.ip_address == ip:
+    for i in aws.get_instances(org=org, state='running'):
+        if i.private_ip_address == ip:
             instance = i
             break
     return instance
 
 def is_master(org='ntropy'):
-    ip = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
-    instance = get_host_by_ip(ip, org=org)
-    if instance.tags.get('Type', '') == 'master':
-        return True
-    return False
+    with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
+        ip = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+        instance = get_host_by_ip(ip, org=org)
+        if instance.tags.get('Type', '') == 'master':
+            return True
+        return False
 
 def set_hosts(org='ntropy', service=None, state='running', master=False, slaves=False):
     env.hosts = get_hosts(org=org, service=service, state=state, master=master, slaves=slaves)
@@ -908,8 +909,8 @@ def install_tastypie():
         run('tar xvzf django-tastypie-0.9.11.tar.gz')
         with cd('django-tastypie-0.9.11'):
             sudo('python setup.py install')
-        run('rm django-tastypie-0.9.11.tar.gz')
-        run('rm -rf django-tastypie-0.9.11')
+        sudo('rm django-tastypie-0.9.11.tar.gz')
+        sudo('rm -rf django-tastypie-0.9.11')
         print '.. [DONE]'
 
 def install_python_mysqldb():
@@ -975,9 +976,9 @@ def install_django_settings(org='ntropy'):
         run('wget https://github.com/premal/config/raw/master/frontend/django_settings.py -O django_settings.py')
         
         try:
-            mysql_master_ip = aws.get_instances(org=org, state='running', service='mysql')[0].private_ip_address
+            mysql_master_ip = aws.get_instances(org=org, state='running', master=True)[0].private_ip_address
         except IndexError:
-            mysql_master_ip = 'localhost'
+            mysql_master_ip = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
 
         code_lines = ["f = open('django_settings.py').read()" ,
                       "out = f.replace('REPLACE_MYSQL_IP', '%s')" %mysql_master_ip,
@@ -1051,12 +1052,9 @@ def install_zoo_cfg(org='ntropy'):
         run('wget https://github.com/premal/config/raw/master/zookeeper/zoo.cfg -O zoo.cfg')
 
         zkInstances = aws.get_instances(org=org, state='running', service='zookeeper')
-
-        # defaults to localhost
         if not zkInstances:
             ip_address = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
             zkInstances = [get_host_by_ip(ip_address, org=org)]
-
         zkServers = '\n'.join(['server.%s=%s:2888:3888' %(''.join(re.findall(r'\d+', x.ip_address)), x.public_dns_name) for x in zkInstances])
 
         code_lines = ["f = open('zoo.cfg').read()" ,
@@ -1163,10 +1161,8 @@ def install_kafka_properties(org='ntropy'):
 
         instances = aws.get_instances(service='zookeeper', org=org, state='running')
         zkServers = ','.join(['%s:2181' %x.public_dns_name for x in instances])
-
-        # defaults to localhost
         if not zkServers:
-            zkServers = '%s:2181' %public_ip
+            zkServers = '%s:2181' %run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
 
         zk_code_lines = ["f = open('server.properties').read()",
                          "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS','%s')" %zkServers,
@@ -1332,16 +1328,20 @@ def install_storm_config(org='ntropy'):
         run('wget https://github.com/premal/config/raw/master/storm/storm.yaml -O storm.yaml')
 
         instances = aws.get_instances(service='zookeeper', org=org, state='running')
+        if not instances:
+            ip = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            instances = [get_host_by_ip(ip, org=org)]
         zkServers = '\n     - '.join(['\\\\"%s\\\\"' %x.public_dns_name for x in instances])
 
         try:
-            public_dns_name = aws.get_instances(service='storm', org=org, state='running', master=True)[0].public_dns_name
+            master = aws.get_instances(org=org, state='running', master=True)[0]
         except IndexError:
-            public_dns_name = 'localhost'
+            ip = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            master = [get_host_by_ip(ip, org=org)][0]
 
         code_lines = ["f = open('storm.yaml').read()",
                       "out = f.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '''%s''')" %zkServers,
-                      "out = out.replace('REPLACE_WITH_NIMBUS_SERVER', '%s')" %public_dns_name,
+                      "out = out.replace('REPLACE_WITH_NIMBUS_SERVER', '%s')" %master.public_dns_name,
                       "f = open('/usr/lib/storm/conf/storm.yaml', 'w')",
                       "f.write(out)",
                       "f.close()"]
@@ -1502,10 +1502,12 @@ def install_hadoop_config(org='ntropy'):
     install_hadoop_env(org=org)
     install_hdfs_site(org=org)
     install_core_site(org=org)
-    install_hdfs_master(org=org)
-    install_hdfs_slaves(org=org)
+    install_hadoop_master(org=org)
+    install_hadoop_slaves(org=org)
     install_hadoop_metrics(org=org)
-    install_monitoring_config('hadoop', 'namenode')
+
+    if is_master(org=org):
+        install_monitoring_config('hadoop', 'namenode')
     install_monitoring_config('hadoop', 'datanode')
 
 def install_hadoop_env(org='ntropy'):
@@ -1526,40 +1528,41 @@ def install_core_site(org='ntropy'):
         run('wget https://github.com/premal/config/raw/master/hadoop/core-site.xml -O core-site.xml')
 
         try:
-            public_dns_name = aws.get_instances(org=org, state='running', master=True)[0].public_dns_name
+            namenode = aws.get_instances(org=org, state='running', master=True)[0]
         except IndexError:
-            public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            ip = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            namenode = [get_host_by_ip(ip, org=org)][0]
 
         code_lines = ["f = open('core-site.xml').read()",
-                      "out = f.replace('REPLACE_WITH_NAMENODE', '%s')" %public_dns_name,
+                      "out = f.replace('REPLACE_WITH_NAMENODE', '%s')" %namenode.public_dns_name,
                       "f = open('/usr/lib/hadoop/conf/core-site.xml', 'w')",
                       "f.write(out)",
                       "f.close()"]
         sudo('python -c "%s"' %'; '.join(code_lines), user='hadoop')
         print '.. [DONE]'
 
-def install_hdfs_master(org='ntropy'):
+def install_hadoop_master(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Installing master config',
         try:
-            public_dns_name = aws.get_instances(org=org, state='running', master=True)[0].public_dns_name
+            namenode = aws.get_instances(org=org, state='running', master=True)[0]
         except IndexError:
-            public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            ip = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            namenode = [get_host_by_ip(ip, org=org)][0]
 
         code_lines = ["f = open('/usr/lib/hadoop/conf/master', 'w')",
-                      "f.write('%s')" %public_dns_name,
+                      "f.write('%s')" %namenode.public_dns_name,
                       "f.close()"]
         sudo('python -c "%s"' %'; '.join(code_lines), user='hadoop')
         print '.. [DONE]'
 
-def install_hdfs_slaves(org='ntropy'):
+def install_hadoop_slaves(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Installing slaves config',
         instances = aws.get_instances(org=org, state='running')
+        if not instances:
+            instances = [get_host_by_ip(ip, org=org)]
         datanodes = '\n'.join([x.public_dns_name for x in instances])
-
-        if not datanodes:
-            datanodes = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
 
         code_lines = ["f = open('/usr/lib/hadoop/conf/slaves', 'w')",
                       "f.write('''%s''')" %datanodes,
@@ -1573,12 +1576,13 @@ def install_hadoop_metrics(org='ntropy'):
         run('wget https://github.com/premal/config/raw/master/hadoop/hadoop-metrics2.properties -O hadoop-metrics2.properties')
 
         try:
-            public_dns_name = aws.get_instances(org=org, state='running', master=True)[0].public_dns_name
+            master = aws.get_instances(org=org, state='running', master=True)[0]
         except IndexError:
-            public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            ip = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            master = [get_host_by_ip(ip, org=org)][0]
 
         code_lines = ["f = open('hadoop-metrics2.properties').read()",
-                      "out = f.replace('REPLACE_WITH_GANGLIA_MASTER', '%s')" %public_dns_name,
+                      "out = f.replace('REPLACE_WITH_GANGLIA_MASTER', '%s')" %master.public_dns_name,
                       "f = open('/usr/lib/hadoop/conf/hadoop-metrics2.properties', 'w')",
                       "f.write(out)",
                       "f.close()"]
@@ -1681,8 +1685,6 @@ def setup_hbase_server(uber=False):
     install_hbase_symlinks()
     install_bashrc(service='hbase')
     install_hbase_daemon()
-    install_monitoring_config('hbase', 'master')
-    install_monitoring_config('hbase', 'regionserver')
 
 def install_hbase():
     with settings(hide('warnings', 'running', 'stdout', 'stderr'), warn_only=True):
@@ -1782,6 +1784,10 @@ def install_hbase_config(org='ntropy'):
     install_hbase_regionservers(org=org)
     install_security_limits('hbase', org=org)
 
+    if is_master(org=org):
+        install_monitoring_config('hbase', 'master')
+    install_monitoring_config('hbase', 'regionserver')
+
 def install_hbase_env(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Installing hbase-env',
@@ -1794,16 +1800,15 @@ def install_hbase_site(org='ntropy'):
         run('wget https://github.com/premal/config/raw/master/hbase/hbase-site.xml -O hbase-site.xml')
 
         try:
-            public_dns_name = aws.get_instances(service='hbase', org=org, state='running', master=True)[0].public_dns_name
+            namenode = aws.get_instances(org=org, state='running', master=True)[0]
             instances = aws.get_instances(service='zookeeper', org=org, state='running')
-            zkServers = ','.join(["%s" %x.public_dns_name for x in instances])
         except IndexError:
-            # defaults to localhost
-            public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
-            zkServers = public_dns_name
+            instances = [get_host_by_ip(ip, org=org)]
+            namenode = instances[0]
+        zkServers = ','.join(["%s" %x.public_dns_name for x in instances])
 
         code_lines = ["f = open('hbase-site.xml').read()",
-                      "out = f.replace('REPLACE_WITH_NAMENODE', '%s')" %public_dns_name,
+                      "out = f.replace('REPLACE_WITH_NAMENODE', '%s')" %namenode.public_dns_name,
                       "out = out.replace('REPLACE_WITH_ZOOKEEPER_SERVERS', '%s')" %zkServers,
                       "f = open('/usr/lib/hbase/conf/hbase-site.xml', 'w')",
                       "f.write(out)",
@@ -1814,12 +1819,11 @@ def install_hbase_site(org='ntropy'):
 def install_hbase_regionservers(org='ntropy'):
     with settings(hide('warnings', 'running', 'stdout', 'stderr')):
         print 'Installing hbase regionservers',
-        instances = aws.get_instances(service='hbase', org=org, state='running')
-        regionservers = '\n'.join([x.public_dns_name for x in instances])
 
-        if not regionservers:
-            # default to localhost
-            regionservers = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+        instances = aws.get_instances(org=org, state='running')
+        if not instances:
+            instances = [get_host_by_ip(ip, org=org)]
+        regionservers = '\n'.join([x.public_dns_name for x in instances])
         
         code_lines = ["f = open('/usr/lib/hbase/conf/regionservers', 'w')",
                       "f.write('''%s''')" %regionservers,
@@ -1833,12 +1837,12 @@ def install_hbase_metrics(org='ntropy'):
         run('wget https://github.com/premal/config/raw/master/hbase/hadoop-metrics.properties -O hadoop-metrics.properties')
 
         try:
-            public_dns_name = aws.get_instances(service='hbase', org=org, state='running', master=True)[0].public_dns_name
+            master = aws.get_instances(org=org, state='running', master=True)[0]
         except IndexError:
-            public_dns_name = run('python -c "import socket, re; print socket.gethostbyname(socket.gethostname())"')
+            master = [get_host_by_ip(ip, org=org)][0]
 
         code_lines = ["f = open('hadoop-metrics.properties').read()",
-                      "out = f.replace('REPLACE_WITH_GANGLIA_MASTER', '%s')" %public_dns_name,
+                      "out = f.replace('REPLACE_WITH_GANGLIA_MASTER', '%s')" %master.public_dns_name,
                       "f = open('/usr/lib/hbase/conf/hadoop-metrics.properties', 'w')",
                       "f.write(out)",
                       "f.close()"]
@@ -1926,9 +1930,9 @@ def create_servers(org, num_instances, instance_type, *services):
         sys.exit(0)
 
     instance_types = ['t1.micro', 'm1.medium', 'm1.xlarge', 'm3.2xlarge']
-    if instance_type not in instance_types:
-        print 'servers can only be %s' %instance_types
-        sys.exit(0)
+    #if instance_type not in instance_types:
+    #    print 'servers can only be %s' %instance_types
+    #    sys.exit(0)
 
     valid_services = ['beacon', 'api', 'frontend', 'zookeeper', 'storm', 'kafka', 'hadoop', 'hbase', 'mysql']
     d = dict(zip(valid_services, valid_services))
@@ -1944,7 +1948,7 @@ def create_servers(org, num_instances, instance_type, *services):
     retry_count = 0
     while retry_count < 10:
         after_instances = aws.get_instances(org=org, state='running')
-        if after_instances:
+        if after_instances and (len(after_instances) - len(before_instances) == num_instances):
             break
         else:
             retry_count += 1

@@ -1,17 +1,3 @@
-hbase:
-    zookeeper:
-        hosts:
-            - REPLACE_WITH_ZOOKEEPER_SERVERS
-        port: 2181
-        connectionTimeout: 10s
-        sessionTimeout: 10s
-        namespace: "/hbase"
-    flushInterval: 6s
-    incrementBufferSize: 256KB
-    maxConcurrentRequests: 1000
-    connectionTimeout: 10s
-    instrumented: no
-
 http:
     port: 6080
     adminPort: 6081

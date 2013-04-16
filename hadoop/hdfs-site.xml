@@ -11,7 +11,7 @@
 
   <property>
     <name>dfs.data.dir</name>
-    <value>/hdfs/volume1/data</value>
+    <value>/grepdata/hadoop/data</value>
   </property>
 
   <property>

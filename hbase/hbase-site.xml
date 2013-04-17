@@ -67,5 +67,14 @@
     <value>io.ntropy.coprocessors.GroupBy</value>
   </property>
 
+  <property>
+    <name>dfs.client.read.shortcircuit</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>hbase.regionserver.checksum.verify</name>
+    <value>true</value>
+  </property>
 </configuration>
 

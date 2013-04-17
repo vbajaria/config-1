@@ -46,8 +46,8 @@
   </property>
 
   <property>
-    <name>dfs.replication</name>
-    <value>2</value>
+    <name>dfs.block.local-path-access.user</name>
+    <value>hbase</value>
   </property>
 </configuration>
 

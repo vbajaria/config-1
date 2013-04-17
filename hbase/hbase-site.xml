@@ -62,5 +62,10 @@
     <value>60000</value>
   </property>
 
+  <property>
+    <name>hbase.coprocessor.region.classes</name>
+    <value>io.ntropy.coprocessors.GroupBy</value>
+  </property>
+
 </configuration>
 

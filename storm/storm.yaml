@@ -14,4 +14,4 @@ worker.childopts: "-Xmx4096m -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -ve
 supervisor.slots.ports:
     - 6700
     - 6701
-
+    - 6702

@@ -9,7 +9,7 @@ java.library.path: "/usr/local/lib:/usr/lib/storm"
 
 topology.debug: true
 
-worker.childopts: "-Xmx4096m -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=1 -XX:GCLogFileSize=512M -Xloggc:worker_%s.jvm.log"
+worker.childopts: "-Xmx4096m -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=1 -XX:GCLogFileSize=512M -Xloggc:/usr/lib/storm/logs/gc-%ID%.log"
 
 supervisor.slots.ports:
     - 6700

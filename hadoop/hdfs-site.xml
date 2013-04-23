@@ -37,7 +37,7 @@
 
   <property>
     <name>dfs.datanode.handler.count</name>
-    <value>10</value>
+    <value>100</value>
   </property>
 
   <property>

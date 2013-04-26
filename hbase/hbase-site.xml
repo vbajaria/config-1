@@ -100,5 +100,12 @@
     <name>hbase.hstore.blockingStoreFiles</name>
     <value>50</value>
   </property>
+
+  <!-- Disabling automatic majot compaction -->
+  <property>
+    <name>hbase.hregion.majorcompaction</name>
+    <value>0</value>
+  </property>
+
 </configuration>
 

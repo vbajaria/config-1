@@ -54,7 +54,7 @@
 
   <property>
     <name>hbase.regionserver.handler.count</name>
-    <value>50000</value>
+    <value>30000</value>
   </property>
 
   <property>

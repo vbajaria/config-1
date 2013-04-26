@@ -31,7 +31,6 @@
 #   HBASE_NICENESS The scheduling priority for daemons. Defaults to 0.
 #
 # Modelled after $HADOOP_HOME/bin/hadoop-daemon.sh
-HBASE_IDENT_STRING="hbase"
 
 usage="Usage: hbase-daemon.sh [--config <conf-dir>]\
  (start|stop|restart) <hbase-command> \
@@ -115,7 +114,7 @@ if [ "$JAVA_HOME" = "" ]; then
   exit 1
 fi
 JAVA=$JAVA_HOME/bin/java
-export HBASE_LOG_PREFIX=hbase-$HBASE_IDENT_STRING-$command-$HOSTNAME
+export HBASE_LOG_PREFIX=hbase-$HBASE_IDENT_STRING-$command
 export HBASE_LOGFILE=$HBASE_LOG_PREFIX.log
 export HBASE_ROOT_LOGGER="INFO,DRFA"
 export HBASE_SECURITY_LOGGER="INFO,DRFAS"

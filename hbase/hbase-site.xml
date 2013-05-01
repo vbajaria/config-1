@@ -107,5 +107,16 @@
     <value>0</value>
   </property>
 
+  <!-- Disabling TCP nagle algorithm -->
+  <property>
+    <name>hbase.ipc.client.tcpnodelay</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>ipc.server.tcpnodelay</name>
+    <value>true</value>
+  </property>
+
 </configuration>
 

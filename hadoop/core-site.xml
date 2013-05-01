@@ -8,4 +8,11 @@
     <name>fs.default.name</name>
     <value>hdfs://REPLACE_WITH_NAMENODE:8020</value>
   </property>
+
+  <!-- Disabling TCP nagle algorithm -->
+  <property>
+    <name>ipc.server.tcpnodelay</name>
+    <value>true</value>
+  </property>
+
 </configuration>

@@ -9,7 +9,7 @@ java.library.path: "/usr/local/lib:/usr/lib/storm"
 
 topology.debug: true
 
-worker.childopts: "-Xmx4096m -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=1 -XX:GCLogFileSize=512M -Xloggc:/usr/lib/storm/logs/gc-%ID%.log"
+worker.childopts: "-Xmx4096m -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=1 -XX:GCLogFileSize=512M -Xloggc:/usr/lib/storm/logs/gc-%ID%.log -Djava.rmi.server.hostname=HOSTNAME -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.port=1%ID%"
 
 supervisor.slots.ports:
     - REPLACE_WITH_NUM_WORKERS

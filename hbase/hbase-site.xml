@@ -64,8 +64,7 @@
 
   <property>
     <name>hbase.coprocessor.region.classes</name>
-    <!--<value>io.ntropy.coprocessors.GroupBy,io.ntropy.coprocessors.GetTimer</value>-->
-    <value>io.ntropy.coprocessors.GetTimer</value>
+    <value>io.ntropy.coprocessors.GroupBy,io.ntropy.coprocessors.GetTimer</value>
   </property>
 
   <property>

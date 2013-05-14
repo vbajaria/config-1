@@ -118,5 +118,10 @@
     <value>true</value>
   </property>
 
+  <property>     
+     <name>hbase.regionserver.region.split.policy</name>     
+     <value>org.apache.hadoop.hbase.regionserver.ConstantSizeRegionSplitPolicy</value> 
+  </property>
+
 </configuration>
 

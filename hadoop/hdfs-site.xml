@@ -6,12 +6,12 @@
 <configuration>
   <property>
     <name>dfs.name.dir</name>
-    <value>/grepdata/hadoop/name,/hdfs/volume1/name</value>
+    <value>/mnt/name,/hdfs/volume1/name</value>
   </property>
 
   <property>
     <name>dfs.data.dir</name>
-    <value>/grepdata/hadoop/data</value>
+    <value>/hdfs/volume1/data</value>
   </property>
 
   <property>
@@ -48,6 +48,11 @@
   <property>
     <name>dfs.block.local-path-access.user</name>
     <value>hbase</value>
+  </property>
+
+  <property>
+    <name>dfs.client.read.shortcircuit</name>
+    <value>true</value>
   </property>
 </configuration>
 

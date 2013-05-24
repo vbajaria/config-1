@@ -1,6 +1,6 @@
 http:
-    port: 6080
-    adminPort: 6081
+    port: 8080
+    adminPort: 8081
     connectorType: nonblocking
     requestLog:
         console:

@@ -17,10 +17,10 @@ SERVICE=$1
 
 case "$2" in
   start)
-    START "java -cp /usr/lib/beacon/dataapi-0.1.jar io.ntropy.dataapi.DataApiService server /usr/lib/beacon/$1-config.yml"
+    START "java -cp /usr/lib/beacon/dataapi-0.1.jar io.ntropy.dataapi.BeaconService server /usr/lib/beacon/$1-config.yml"
   ;;
   stop)
-    STOP  "java -cp /usr/lib/beacon/dataapi-0.1.jar io.ntropy.dataapi.DataApiService server /usr/lib/beacon/$1-config.yml"
+    STOP  "java -cp /usr/lib/beacon/dataapi-0.1.jar io.ntropy.dataapi.BeaconService server /usr/lib/beacon/$1-config.yml"
   ;;
   *)
     USAGE

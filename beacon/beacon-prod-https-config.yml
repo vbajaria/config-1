@@ -27,7 +27,7 @@ http:
             currentLogFilename: /var/log/beacon/access-https.log
             archive: true
             archivedLogFilenamePattern: /var/log/beacon/access-https-%d.log.gz
-            archivedFileCount: 5
+            archivedFileCount: 60
 
 logging:
     console:

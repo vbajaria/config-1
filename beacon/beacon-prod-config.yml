@@ -20,7 +20,7 @@ logging:
         currentLogFilename: /var/log/beacon/service.log
         archive: true
         archivedLogFilenamePattern: /var/log/beacon/service-%d.log.gz
-        archivedFileCount: 5
+        archivedFileCount: 60
 
 mysql:
     driverClass: com.mysql.jdbc.Driver

@@ -27,7 +27,7 @@ http:
             currentLogFilename: /var/log/beacon/access-https.log
             archive: true
             archivedLogFilenamePattern: /var/log/beacon/access-https-%d.log.gz
-            archivedFileCount: 60
+            archivedFileCount: 50
 
 logging:
     console:
@@ -37,7 +37,7 @@ logging:
         currentLogFilename: /var/log/beacon/service-https.log
         archive: true
         archivedLogFilenamePattern: /var/log/beacon/service-https-%d.log.gz
-        archivedFileCount: 5
+        archivedFileCount: 50
 
 mysql:
     driverClass: com.mysql.jdbc.Driver

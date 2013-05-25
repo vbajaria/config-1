@@ -2,6 +2,6 @@ check process beacon-prod-https with pidfile /var/service/pids/beacon-prod-https
     start program = "/etc/init.d/beacon beacon-prod-https start" with timeout 45 seconds
     stop program = "/etc/init.d/beacon beacon-prod-https stop"
     if cpu usage is greater than 60 percent for 2 cycles then alert
-    if 2 restarts within 4 cycles then timeout
+    if 5 restarts within 10 cycles then timeout
     alert alerts@grepdata.com
 

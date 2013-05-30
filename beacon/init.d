@@ -20,7 +20,7 @@ case "$2" in
     START "java -cp /usr/lib/beacon/dataapi-0.1.jar io.ntropy.dataapi.BeaconService server /usr/lib/beacon/$1-config.yml"
   ;;
   stop)
-    STOP  "java -cp /usr/lib/beacon/dataapi-0.1.jar io.ntropy.dataapi.BeaconService server /usr/lib/beacon/$1-config.yml"
+    STOP
   ;;
   *)
     USAGE

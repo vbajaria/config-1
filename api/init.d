@@ -20,7 +20,7 @@ case "$2" in
     START "java -cp /usr/lib/api/dataapi-0.1.jar io.ntropy.dataapi.DataApiService server /usr/lib/api/$1-config.yml"
   ;;
   stop)
-    STOP  "java -cp /usr/lib/api/dataapi-0.1.jar io.ntropy.dataapi.DataApiService server /usr/lib/api/$1-config.yml"
+    STOP 
   ;;
   *)
     USAGE

@@ -17,7 +17,7 @@ SERVICE=$1
 
 case "$2" in
   start)
-    START "java -cp /usr/lib/api/dataapi-0.1.jar io.ntropy.dataapi.DataApiService server /usr/lib/api/$1-config.yml"
+    START "java -cp /usr/lib/api/dataapi-0.1.jar:/usr/lib/storm/storm-0.9.0-wip16.jar:/usr/lib/storm/lib/*:/usr/lib/storm/conf/storm.yaml io.ntropy.dataapi.DataApiService server /usr/lib/api/$1-config.yml"
   ;;
   stop)
     STOP 

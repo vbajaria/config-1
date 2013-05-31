@@ -43,7 +43,7 @@ connect="maxchildren=MAX_CHILDREN maxspare=MAX_SPARE minspare=MIN_SPARE socket=/
 pidfile="/var/run/django/django.pid"
 errlog="/var/log/django-err.log"
 outlog="/var/log/django-out.log"
-(cd /var/ntropy/py;python manage.py runfcgi method=prefork $connect pidfile=$pidfile errlog=$errlog outlog=$outlog maxrequests=1000)
+(cd /var/ntropy/ui/web;python manage.py runfcgi method=prefork $connect pidfile=$pidfile errlog=$errlog outlog=$outlog maxrequests=1000)
 
 ############################################################
 # Ensure all newly started files and directories are owned

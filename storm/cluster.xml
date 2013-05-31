@@ -2,9 +2,11 @@
 
 <configuration scan="true" scanPeriod="60 seconds">
  <appender name="A1" class="ch.qos.logback.core.rolling.RollingFileAppender">
-    <file>${storm.home}/logs/${logfile.name}</file>
+    <!--<file>${storm.home}/logs/${logfile.name}</file>-->
+    <file>/mnt/storm/logs/${logfile.name}</file>
     <rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy">
-      <fileNamePattern>${storm.home}/logs/${logfile.name}-%d{yyyy-MM-dd}.%i.gz</fileNamePattern>
+      <!--<fileNamePattern>${storm.home}/logs/${logfile.name}-%d{yyyy-MM-dd}.%i.gz</fileNamePattern>-->
+      <fileNamePattern>/mnt/storm/logs/${logfile.name}-%d{yyyy-MM-dd}.%i.gz</fileNamePattern>
       <timeBasedFileNamingAndTriggeringPolicy
             class="ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP">
         <!-- or whenever the file size reaches 100MB -->

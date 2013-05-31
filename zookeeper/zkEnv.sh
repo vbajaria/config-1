@@ -26,6 +26,7 @@
 ZOO_LOG_DIR=/mnt/zookeeper/logs
 ZOOBINDIR=${ZOOBINDIR:-/usr/bin}
 ZOOKEEPER_PREFIX=${ZOOBINDIR}/..
+JVMFLAGS="-Xmx2048M"
 
 if [ "x$ZOOCFGDIR" = "x" ]
 then

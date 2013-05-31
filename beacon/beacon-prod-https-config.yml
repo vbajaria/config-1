@@ -13,8 +13,8 @@ hbase:
     instrumented: no
 
 http:
-    port: 8090
-    adminPort: 8091
+    port: 8070
+    adminPort: 8071
     connectorType: nonblocking+ssl
     ssl:
         keyStore: /home/ubuntu/.ssh/beacon.keystore

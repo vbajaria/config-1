@@ -11,8 +11,8 @@ ADMINS = (
 
 MANAGERS = ADMINS
 
-DEV = REPLACE_DEV_FLAG
-DATA_API = 'REPLACE_DATA_API'
+DEV = True
+DATA_API = 'https://api.grepdata.com/v1/'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',

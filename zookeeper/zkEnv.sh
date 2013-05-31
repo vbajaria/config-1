@@ -23,7 +23,7 @@
 # or the conf directory that is
 # a sibling of this script's directory
 
-ZOO_LOG_DIR=/var/log/zookeeper
+ZOO_LOG_DIR=/mnt/zookeeper/logs
 ZOOBINDIR=${ZOOBINDIR:-/usr/bin}
 ZOOKEEPER_PREFIX=${ZOOBINDIR}/..
 

@@ -12,7 +12,7 @@ export JAVA_HOME=/usr/lib/jvm/sun-java6
 # export HADOOP_CLASSPATH=
 
 # The maximum amount of heap to use, in MB. Default is 1000.
-export HADOOP_HEAPSIZE=1000
+export HADOOP_HEAPSIZE=2048
 
 # Extra Java runtime options.  Empty by default.
 # export HADOOP_OPTS=-server

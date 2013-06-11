@@ -1,0 +1,15 @@
+hbase.zookeeper.servers:
+    - REPLACE_WITH_ZOOKEEPER_SERVERS
+hbase.zookeeper.port: 2181
+
+kafka.zookeeper.servers:
+    - REPLACE_WITH_ZOOKEEPER_SERVERS
+kafka.zookeeper.port: 2181
+
+reciperunner.api.host: "https://api.grepdata.com"
+reciperunner.db.host: "REPLACE_WITH_MYSQL_SERVER"
+reciperunner.db.port: 3306
+reciperunner.db.database: "ntropy"
+reciperunner.db.user: "ntropy"
+reciperunner.db.pwd: "2bc869f70e28759f57561b5303f4883c"
+

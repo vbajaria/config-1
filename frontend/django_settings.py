@@ -2,7 +2,7 @@
 import os
 PROJECT_ROOT = os.path.dirname(__file__)
 
-DEBUG = True
+DEBUG = False
 TEMPLATE_DEBUG = DEBUG
 
 ADMINS = (
@@ -11,7 +11,7 @@ ADMINS = (
 
 MANAGERS = ADMINS
 
-DEV = True
+DEV = False
 DATA_API = 'https://api.grepdata.com/v1/'
 DATABASES = {
     'default': {

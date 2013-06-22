@@ -32,7 +32,7 @@ export JAVA_HOME=/usr/lib/jvm/sun-java6
 export HBASE_CLASSPATH=/usr/lib/hadoop/lib/hadoop-lzo-0.4.15.jar
 
 # The maximum amount of heap to use, in MB. Default is 1000.
-export HBASE_HEAPSIZE=5120
+export HBASE_HEAPSIZE=10240
 
 # Extra Java runtime options.
 # Below are what we set by default.  May only work with SUN JVM.

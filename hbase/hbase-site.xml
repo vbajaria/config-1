@@ -123,5 +123,10 @@
      <value>org.apache.hadoop.hbase.regionserver.ConstantSizeRegionSplitPolicy</value> 
   </property>
 
+  <property>
+    <name>hbase.regionserver.maxlogs</name>
+    <value>128</value>
+  </property>
+
 </configuration>
 

@@ -54,5 +54,10 @@
     <name>dfs.client.read.shortcircuit</name>
     <value>true</value>
   </property>
+
+  <property>
+    <name>topology.script.file.name</name>
+    <value>/usr/lib/hadoop/conf/rack_awareness_topology.py</value>
+  </property>
 </configuration>
 

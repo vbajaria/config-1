@@ -2,5 +2,7 @@
 
 import datetime
 
-f = open('/var/log/storm/oom.log')
-print 'Got OOM at %s' %str(datetime.datetime)
+f = open('oom.log', 'w')
+f.write('Got OOM at %s\n' %str(datetime.datetime))
+f.close()
+

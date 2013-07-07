@@ -19,6 +19,7 @@ JMXPORT=$3
 case "$2" in
   start)
     JAVAOPTS="-Xmx2048m -Xms512m \
+          -XX:+UseParNewGC -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -verbose:gc -XX:+PrintGCDateStamps -XX:+PrintGCDetails -Xloggc:/var/log/api/$1-gc.log \
           -Dcom.sun.management.jmxremote.port=$JMXPORT \
           -Dcom.sun.management.jmxremote.ssl=false \
           -Dcom.sun.management.jmxremote.authenticate=false \

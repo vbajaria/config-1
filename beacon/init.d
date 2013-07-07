@@ -14,10 +14,18 @@ my_dir=`dirname $0`
 . $my_dir/service_config.sh
 
 SERVICE=$1
+JMXPORT=$3
 
 case "$2" in
   start)
-    START "java -cp /usr/lib/beacon/dataapi-0.1.jar io.ntropy.dataapi.BeaconService server /usr/lib/beacon/$1-config.yml"
+    JAVAOPTS="-Xmx1536m -Xms256m \
+          -Dcom.sun.management.jmxremote.port=$JMXPORT \
+          -Dcom.sun.management.jmxremote.ssl=false \
+          -Dcom.sun.management.jmxremote.authenticate=false \
+          -Dcom.sun.management.jmxremote.local.only=false \
+          -Dcom.sun.management.jmxremote \
+          -Djava.rmi.server.hostname=HOSTNAME"
+    START "java $JAVAOPTS -cp /usr/lib/beacon/dataapi-0.1.jar io.ntropy.dataapi.BeaconService server /usr/lib/beacon/$1-config.yml"
   ;;
   stop)
     STOP

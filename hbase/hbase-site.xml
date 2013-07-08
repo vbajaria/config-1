@@ -77,10 +77,10 @@
     <value>true</value>
   </property>
 
-  <!-- default is 256MB 268435456, this is 100GB -->
+  <!-- default is 256MB 268435456, this is 20GB -->
   <property>
     <name>hbase.hregion.max.filesize</name>
-    <value>107374182400</value>
+    <value>21474836480</value>
   </property>
 
   <!-- default is 2 -->
@@ -89,7 +89,7 @@
     <value>4</value>
   </property>
   
-  <!-- default is 64MB 67108864 -->
+  <!-- default is 128MB -->
   <property>
     <name>hbase.hregion.memstore.flush.size</name>
     <value>134217728</value>
@@ -98,10 +98,16 @@
   <!-- default is 7, should be at least 2x compactionThreshold -->
   <property>
     <name>hbase.hstore.blockingStoreFiles</name>
-    <value>50</value>
+    <value>25</value>
   </property>
 
-  <!-- Disabling automatic majot compaction -->
+  <!-- default is 0.25 -->
+  <property>
+    <name>hfile.block.cache.size</name>
+    <value>0.4</value>
+  </property>
+
+  <!-- Disabling automatic major compaction -->
   <property>
     <name>hbase.hregion.majorcompaction</name>
     <value>0</value>

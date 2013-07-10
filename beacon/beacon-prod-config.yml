@@ -57,3 +57,11 @@ kafka:
 
 authenticationCachePolicy: maximumSize=10000, expireAfterAccess=10m
 
+email:
+    enabled: true
+    host: "smtp.gmail.com"
+    port: 587
+    user: "alert-sender@ntropy.io"
+    password: "Ntropy33"
+    from: "alert-sender@ntropy.io"
+    to: "alerts@grepdata.com"

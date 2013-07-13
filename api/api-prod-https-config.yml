@@ -74,11 +74,11 @@ kafka:
         batchSize: 2000
     serializerClass: kafka.serializer.StringEncoder
 
-email:
-    enabled: true
-    host: "smtp.gmail.com"
-    port: 587
-    user: "alert-sender@ntropy.io"
-    password: "Ntropy33"
-    from: "alert-sender@ntropy.io"
-    to: "alerts@grepdata.com"
+#email:
+#    enabled: true
+#    host: "smtp.gmail.com"
+#    port: 587
+#    user: "alert-sender@ntropy.io"
+#    password: "Ntropy33"
+#    from: "alert-sender@ntropy.io"
+#    to: "alerts@grepdata.com"

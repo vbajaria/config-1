@@ -99,7 +99,7 @@ set mailserver localhost,               # primary mailserver
 ## or sender using the MAIL-FORMAT statement. Macros such as $DATE, etc.
 ## are expanded at runtime. For example, to override the sender, use:
 #
-# set mail-format { from: monit@foo.bar }
+ set mail-format { from: monit@grepdata.com }
 #
 #
 ## You can set alert recipients whom will receive alerts if/when a 
@@ -116,8 +116,8 @@ set mailserver localhost,               # primary mailserver
 ## Monit Wiki if you want to enable SSL for the web server. 
 #
 set httpd port 2812 and
-    use address localhost  # only accept connection from localhost
-    allow localhost        # allow localhost to connect to the server and
+#    use address localhost  # only accept connection from localhost
+#    allow localhost        # allow localhost to connect to the server and
     allow gd:gd      # require user 'admin' with password 'monit'
 #    allow @monit           # allow users of group 'monit' to connect (rw)
 #    allow @users readonly  # allow users of group 'users' to connect readonly

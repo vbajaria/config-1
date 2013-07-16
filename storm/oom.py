@@ -1,8 +1,8 @@
 #!/usr/bin/python
 
-import datetime
+import datetime, sys
 
 f = open('oom.log', 'w')
-f.write('Got OOM at %s\n' %str(datetime.datetime))
+f.write('Worker %s ran out of memory at %s\n' %(sys.argv[1], str(datetime.datetime.now())))
 f.close()
 

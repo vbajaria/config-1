@@ -1,8 +1,8 @@
 #!/usr/bin/python
 
-import datetime
+import datetime, sys
 
-f = open('error.log', 'w')
-f.write('Errored out at %s\n' %str(datetime.datetime))
+f = open('/mnt/storm/error.log', 'w')
+f.write('Worker %s errored out at %s\n' %(sys.argv[1], str(datetime.datetime.now())))
 f.close()
 

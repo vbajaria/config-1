@@ -46,7 +46,7 @@ export HBASE_OPTS="-Djava.rmi.server.hostname=HOSTNAME -Dcom.sun.management.jmxr
 
 # this enables gc logging using automatic GC log rolling. Only applies to jdk 1.6.0_34+ and 1.7.0_2+. Either use this set of options or the one above
 export HBASE_GC_OPTS="-XX:+UseParNewGC -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -XX:CMSInitiatingOccupancyFraction=70 -XX:+UseCMSCompactAtFullCollection -XX:CMSFullGCsBeforeCompaction=0 -XX:+CMSClassUnloadingEnabled -XX:CMSMaxAbortablePrecleanTime=300 -XX:+CMSScavengeBeforeRemark -XX:+UseCompressedOops -XX:SoftRefLRUPolicyMSPerMB=0 $HBASE_GC_OPTS"
-export SERVER_GC_OPTS="-verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=1 -XX:GCLogFileSize=512M $HBASE_GC_OPTS"
+export SERVER_GC_OPTS="-verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=3 -XX:GCLogFileSize=512M $HBASE_GC_OPTS"
 
 # Uncomment below to enable java garbage collection logging for the client processes in the .out file.
 # export CLIENT_GC_OPTS="-verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps $HBASE_GC_OPTS"

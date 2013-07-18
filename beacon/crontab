@@ -15,4 +15,5 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 #
 
 10 0	* * *	ubuntu	cd /home/ubuntu && python backup.py
+45 */6	* * *	root	/etc/init.d/api api-prod-https stop; sleep 2; /etc/init.d/api api-prod-https start 9001
 

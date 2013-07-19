@@ -64,7 +64,8 @@
 
   <property>
     <name>hbase.coprocessor.region.classes</name>
-    <value>io.ntropy.coprocessors.GroupBy</value>
+    <!--<value>io.ntropy.coprocessors.GroupBy</value>-->
+    <value>io.ntropy.coprocessors.GroupBy,io.ntropy.coprocessors.NewGroupBy,io.ntropy.coprocessors.MetricsCompute</value>
   </property>
 
   <property>

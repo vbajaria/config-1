@@ -9,7 +9,10 @@ java.library.path: "/usr/local/lib:/usr/lib/storm"
 
 topology.debug: false
 
-worker.childopts: "-Xmx2048m -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=1 -XX:GCLogFileSize=512M -Xloggc:/usr/lib/storm/logs/gc-%ID%.log -Djava.rmi.server.hostname=HOSTNAME -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.port=1%ID%"
+worker.childopts: "-Xmx2048m -agentpath:/home/ubuntu/yjp-12.0.5/bin/linux-x86-64/libyjpagent.so=disablestacktelemetry,disableexceptiontelemetry,builtinprobes=none,delay=10000 -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=1 -XX:GCLogFileSize=512M -Xloggc:/usr/lib/storm/logs/gc-%ID%.log -Djava.rmi.server.hostname=HOSTNAME -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.port=1%ID%"
+
+#worker.childopts: "-Xmx2048m -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=1 -XX:GCLogFileSize=512M -Xloggc:/usr/lib/storm/logs/gc-%ID%.log -Djava.rmi.server.hostname=HOSTNAME -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.port=1%ID%"
+
 #worker.childopts: "-Xmx2048m -XX:OnOutOfMemoryError=\"/home/ubuntu/oom.py %ID%\" -XX:OnError=\"/home/ubuntu/error.py %ID%\" -XX:-HeapDumpOnOutOfMemoryError -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=1 -XX:GCLogFileSize=512M -Xloggc:/usr/lib/storm/logs/gc-%ID%.log -Djava.rmi.server.hostname=HOSTNAME -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.port=1%ID%"
 
 supervisor.slots.ports:

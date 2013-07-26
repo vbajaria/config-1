@@ -21,12 +21,12 @@ for dir, s, files in os.walk('/mnt/data/kafka'):
             remote_size = bucket.lookup(s3_filename).size             
 
             if local_size == remote_size:
-                print '\tSkipping %s' %local_filename
+                print '\tSkipping %s (%d kB)' %(local_filename, local_size / 1024)
                 continue
         except AttributeError:
             pass
     
-        print 'Uploading %s (%d bytes)' %(local_filename, (local_size - remote_size))
+        print 'Uploading %s (%d kB)' %(local_filename, (local_size - remote_size) / 1024)
 
         key = Key(bucket)
         key.key = s3_filename

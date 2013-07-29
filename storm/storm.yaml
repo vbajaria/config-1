@@ -9,10 +9,16 @@ java.library.path: "/usr/local/lib:/usr/lib/storm"
 
 topology.debug: false
 
-worker.childopts: "-Xmx4096m -agentpath:/home/ubuntu/yjp-12.0.5/bin/linux-x86-64/libyjpagent.so=disablestacktelemetry,disableexceptiontelemetry,builtinprobes=none,delay=10000 -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCTimeStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=3 -XX:GCLogFileSize=512M -Xloggc:/usr/lib/storm/logs/gc-%ID%.log -Djava.rmi.server.hostname=HOSTNAME -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.port=1%ID%"
+# only yourkit
+worker.childopts: "-Xmx4096m -agentpath:/home/ubuntu/yjp-12.0.5/bin/linux-x86-64/libyjpagent.so=disablestacktelemetry,disableexceptiontelemetry,builtinprobes=none,delay=10000,port=1%ID% -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCTimeStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=3 -XX:GCLogFileSize=512M -Xloggc:/usr/lib/storm/logs/gc-%ID%.log"
 
+# yourkit and jmx
+#worker.childopts: "-Xmx4096m -agentpath:/home/ubuntu/yjp-12.0.5/bin/linux-x86-64/libyjpagent.so=disablestacktelemetry,disableexceptiontelemetry,builtinprobes=none,delay=10000 -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCTimeStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=3 -XX:GCLogFileSize=512M -Xloggc:/usr/lib/storm/logs/gc-%ID%.log -Djava.rmi.server.hostname=HOSTNAME -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.port=1%ID%"
+
+# jmx
 #worker.childopts: "-Xmx4096m -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCTimeStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=3 -XX:GCLogFileSize=512M -Xloggc:/usr/lib/storm/logs/gc-%ID%.log -Djava.rmi.server.hostname=HOSTNAME -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.port=1%ID%"
 
+# error and oom (not working)
 #worker.childopts: "-Xmx4096m -XX:OnOutOfMemoryError=\"/home/ubuntu/oom.py %ID%\" -XX:OnError=\"/home/ubuntu/error.py %ID%\" -XX:-HeapDumpOnOutOfMemoryError -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalMode -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCTimeStamps -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=3 -XX:GCLogFileSize=512M -Xloggc:/usr/lib/storm/logs/gc-%ID%.log -Djava.rmi.server.hostname=HOSTNAME -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.port=1%ID%"
 
 supervisor.slots.ports:

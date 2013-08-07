@@ -15,7 +15,7 @@ reciperunner.db.pwd: "2bc869f70e28759f57561b5303f4883c"
 
 topology.maxInstances: 64
 topology.zookeeper.servers:
-    - REPLACE_WITH_ZOOKEEPER_SERVERS
+     - REPLACE_WITH_ZOOKEEPER_SERVERS
 topology.zookeeper.port: 2181
 topology.zookeeper.root: "/grepdata"
 topology.zookeeper.connectionTimeout: 10000

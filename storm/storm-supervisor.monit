@@ -1,0 +1,8 @@
+check process supervisor with pidfile /var/service/pids/supervisor.pid
+    start program = "/etc/init.d/storm supervisor start" as uid storm
+    stop program = "/etc/init.d/storm supervisor stop" as uid storm
+    if cpu usage is greater than 60 percent for 2 cycles then alert
+    if loadavg (5min) is greater than 50 for 5 cycles then alert
+    if 5 restarts within 10 cycles then timeout
+    alert alerts@grepdata.com
+

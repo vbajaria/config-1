@@ -26,7 +26,7 @@ case "$2" in
           -Dcom.sun.management.jmxremote.local.only=false \
           -Dcom.sun.management.jmxremote \
           -Djava.rmi.server.hostname=HOSTNAME"
-    START "java $JAVAOPTS -cp /usr/lib/beacon/dataapi-0.1.jar io.ntropy.dataapi.BeaconService server /usr/lib/beacon/$1-config.yml"
+    START "java $JAVAOPTS -cp /usr/lib/beacon/dataapi-0.1.jar:/usr/lib/storm/lib/curator-framework-1.0.1.jar:/usr/lib/storm/lib/curator-client-1.0.1.jar io.ntropy.dataapi.BeaconService server /usr/lib/beacon/$1-config.yml"
   ;;
   stop)
     STOP

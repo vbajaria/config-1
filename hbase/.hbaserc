@@ -1,0 +1,2 @@
+export HBASE_HOME=/usr/lib/hbase
+export PATH=$PATH:$HBASE_HOME/bin

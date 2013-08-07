@@ -1,0 +1,139 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+/**
+ * Copyright 2010 The Apache Software Foundation
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+-->
+<configuration>
+  <property>
+    <name>hbase.rootdir</name>
+    <value>hdfs://REPLACE_WITH_NAMENODE:8020/hbase</value>
+  </property>
+
+  <property>
+    <name>hbase.cluster.distributed</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>hbase.tmp.dir</name>
+    <value>/hbase/tmp</value>
+  </property>
+
+  <property>
+    <name>hbase.local.dir</name>
+    <value>/hbase/local</value>
+  </property>
+
+  <property>
+    <name>hbase.zookeeper.quorum</name>
+    <value>REPLACE_WITH_ZOOKEEPER_SERVERS</value>
+  </property>
+
+  <property>
+    <name>hbase.regionserver.codecs</name>
+    <value>lzo,gz</value>
+  </property>
+
+  <property>
+    <name>hbase.regionserver.handler.count</name>
+    <value>100</value>
+  </property>
+
+  <property>
+    <name>zookeeper.session.timeout</name>
+    <value>60000</value>
+  </property>
+
+  <property>
+    <name>hbase.coprocessor.region.classes</name>
+    <!--<value>io.ntropy.coprocessors.GroupBy</value>-->
+    <value>io.ntropy.coprocessors.GroupBy,io.ntropy.coprocessors.NewGroupBy,io.ntropy.coprocessors.MetricsCompute</value>
+  </property>
+
+  <property>
+    <name>dfs.client.read.shortcircuit</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>hbase.regionserver.checksum.verify</name>
+    <value>true</value>
+  </property>
+
+  <!-- default is 256MB 268435456, this is 20GB -->
+  <property>
+    <name>hbase.hregion.max.filesize</name>
+    <value>21474836480</value>
+  </property>
+
+  <!-- default is 2 -->
+  <property>
+    <name>hbase.hregion.memstore.block.multiplier</name>
+    <value>4</value>
+  </property>
+  
+  <!-- default is 128MB -->
+  <property>
+    <name>hbase.hregion.memstore.flush.size</name>
+    <value>134217728</value>
+  </property>
+  
+  <!-- default is 7, should be at least 2x compactionThreshold -->
+  <property>
+    <name>hbase.hstore.blockingStoreFiles</name>
+    <value>25</value>
+  </property>
+
+  <!-- default is 0.25 -->
+  <property>
+    <name>hfile.block.cache.size</name>
+    <value>0.4</value>
+  </property>
+
+  <!-- Disabling automatic major compaction -->
+  <property>
+    <name>hbase.hregion.majorcompaction</name>
+    <value>0</value>
+  </property>
+
+  <!-- Disabling TCP nagle algorithm -->
+  <property>
+    <name>hbase.ipc.client.tcpnodelay</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>ipc.server.tcpnodelay</name>
+    <value>true</value>
+  </property>
+
+  <property>     
+     <name>hbase.regionserver.region.split.policy</name>     
+     <value>org.apache.hadoop.hbase.regionserver.ConstantSizeRegionSplitPolicy</value> 
+  </property>
+
+  <property>
+    <name>hbase.regionserver.maxlogs</name>
+    <value>128</value>
+  </property>
+
+</configuration>
+

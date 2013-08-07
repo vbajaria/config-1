@@ -85,7 +85,7 @@ grepdata:
         sessionTimeout: 10s
         namespace: "/grepdata"
     email:
-        enabled: false
+        enabled: true
         host: "smtp.gmail.com"
         port: 587
         user: "alert-sender@ntropy.io"

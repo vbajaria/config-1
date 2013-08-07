@@ -58,7 +58,7 @@ kafka:
 authenticationCachePolicy: maximumSize=10000, expireAfterAccess=10m
 
 grepdata:
-    workerId: 0
+    workerId: REPLACE_WITH_WORKER_ID
     maxWorkers: 64
     zk:
         hosts:

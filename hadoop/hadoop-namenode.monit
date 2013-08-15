@@ -1,0 +1,6 @@
+check process hadoop-namenode with pidfile "/tmp/hadoop-hadoop-namenode.pid"
+    start program = "/usr/lib/hadoop/bin/hadoop-daemon.sh start namenode" as uid hadoop and gid hadoop
+    stop program = "/usr/lib/hadoop/bin/hadoop-daemon.sh stop namenode" as uid hadoop and gid hadoop
+    if 2 restarts within 4 cycles then timeout
+    alert premal@grepdata.com
+

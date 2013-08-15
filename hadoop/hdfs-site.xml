@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+
+<!-- Put site-specific property overrides in this file. -->
+
+<configuration>
+  <property>
+    <name>dfs.name.dir</name>
+    <value>/mnt/name,/hdfs/volume1/name</value>
+  </property>
+
+  <property>
+    <name>dfs.data.dir</name>
+    <value>/hdfs/volume1/data</value>
+  </property>
+
+  <property>
+    <name>dfs.replication</name>
+    <value>3</value>
+  </property>
+
+   <property>
+     <name>dfs.client.block.write.retries</name>
+     <value>3</value>
+   </property>
+
+   <property>
+    <name>fs.trash.interval</name>
+    <value>30</value>
+    <final>true</final>
+  </property>
+
+  <property>
+   <name>dfs.datanode.max.xcievers</name>
+   <value>4096</value>
+  </property>
+
+  <property>
+    <name>dfs.datanode.handler.count</name>
+    <value>100</value>
+  </property>
+
+  <property>
+    <name>dfs.namenode.handler.count</name>
+    <value>20</value>
+  </property>
+
+  <property>
+    <name>dfs.block.local-path-access.user</name>
+    <value>hbase</value>
+  </property>
+
+  <property>
+    <name>dfs.client.read.shortcircuit</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>topology.script.file.name</name>
+    <value>/usr/lib/hadoop/conf/rack_awareness_topology.py</value>
+  </property>
+</configuration>
+

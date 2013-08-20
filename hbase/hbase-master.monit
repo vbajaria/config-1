@@ -1,6 +1,6 @@
 check process hbase-master with pidfile "/tmp/hbase-hbase-master.pid"
-    start program = "/usr/lib/hbase/bin/hbase-daemon.sh start master" as uid hbase and gid hbase
-    stop program = "/usr/lib/hbase/bin/hbase-daemon.sh stop master" as uid hbase and gid hbase
-    if 2 restarts within 4 cycles then timeout
-    alert premal@grepdata.com
+    #start program = "/usr/lib/hbase/bin/hbase-daemon.sh start master" as uid hbase and gid hbase
+    #stop program = "/usr/lib/hbase/bin/hbase-daemon.sh stop master" as uid hbase and gid hbase
+    #if 2 restarts within 4 cycles then timeout
+    alert monit@grepdata.com
 

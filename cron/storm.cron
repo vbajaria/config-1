@@ -1,0 +1,14 @@
+STORM_CLASSPATH=/usr/lib/storm/storm-recipes-0.1-jar-with-dependencies.jar:/usr/lib/storm/storm-0.9.0-wip16.jar:/usr/lib/storm/lib/*:/usr/lib/storm/conf/
+
+*  *    * * *   storm  java -Dstorm.conf.file=storm.yaml -cp $STORM_CLASSPATH io.ntropy.management.RecipeRunner 2>&1 >> /mnt/storm/logs/recipe-runner 
+
+*  *    * * *   storm  java -Dstorm.conf.file=storm.yaml -cp $STORM_CLASSPATH io.ntropy.management.RecipeKiller 2>&1 >> /mnt/storm/logs/recipe-killer
+
+59 *    * * *   storm  java -Dstorm.conf.file=storm.yaml -cp $STORM_CLASSPATH io.ntropy.management.RecipeMonitor 2>&1 >> /mnt/storm/logs/recipe-monitor 
+
+*/10 *    * * *   storm  java -Dstorm.conf.file=storm.yaml -cp $STORM_CLASSPATH io.ntropy.management.UpdateDimensionCardinality 2>&1 >> /mnt/storm/logs/recipe-update-cardinality
+
+*/5  *    * * *   storm  java -Dstorm.conf.file=storm.yaml -cp $STORM_CLASSPATH io.ntropy.management.PopulateBaselineDimensions 2>&1 >> /mnt/storm/logs/recipe-populate-baseline
+
+1 *	* * *	ubuntu  cd /home/ubuntu && python push_demo_data.py demonstration 054a9c9ade7dcf325a3aab542ebd73b5 >> nohup.out
+

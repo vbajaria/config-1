@@ -1,0 +1,55 @@
+#!/bin/bash
+
+#[ ! -e current ] || mv -T /var/ntropy/current /var/ntropy
+
+############################################################
+# Stop Django
+############################################################
+pkill -f runfcgi
+
+############################################################
+# Ensure all files, and directories are present and create
+# anything that is missing.
+############################################################
+[ ! -e /var/run/django.pid ] || rm /var/run/django.pid
+[ ! -e /var/run/django/django.pid ] || rm /var/run/django/django.pid
+[ ! -e /tmp/django.sock ] || rm /tmp/django.sock
+[ -e /tmp/client_body_temp ] || mkdir /tmp/client_body_temp
+[ -e /tmp/proxy_temp ] || mkdir /tmp/proxy_temp
+[ -e /tmp/fastcgi_temp ] || mkdir /tmp/fastcgi_temp
+[ -e /var/log/ntropy ] || mkdir /var/log/ntropy
+[ -d /var/run/django ] || (mkdir /var/run/django ; chown ntropy:ntropy /var/run/django )
+[ -d /var/run/django ] || (mkdir -p /var/run/django ; chown -R ntropy:ntropy /var/run/django)
+
+############################################################
+# Roll logs, we can only do this when django is stopped
+############################################################
+
+############################################################
+# Start Django
+############################################################
+touch /var/log/django-out.log
+touch /var/log/django-err.log
+touch /var/log/ntropy/error.log
+chown ntropy:ntropy /var/log/django-out.log
+chown ntropy:ntropy /var/log/django-err.log
+chown ntropy:ntropy /var/log/ntropy/error.log
+chown -R ntropy:ntropy /var/log/ntropy
+
+############################################################
+# Start the fcgi processes
+############################################################
+connect="maxchildren=MAX_CHILDREN maxspare=MAX_SPARE minspare=MIN_SPARE socket=/tmp/django.sock"
+pidfile="/var/run/django/django.pid"
+errlog="/var/log/django-err.log"
+outlog="/var/log/django-out.log"
+(cd /var/ntropy/ui/web;python manage.py runfcgi method=prefork $connect pidfile=$pidfile errlog=$errlog outlog=$outlog maxrequests=1000)
+
+############################################################
+# Ensure all newly started files and directories are owned
+# by the correct users.
+############################################################
+[ -e /tmp/django.sock ] || sleep 3
+chmod -R 775 /var/log/ntropy
+chmod 777 /tmp/django.sock
+chown ntropy:ntropy /tmp/django.sock

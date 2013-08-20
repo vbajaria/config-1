@@ -50,7 +50,7 @@
 # port 25 - it is possible to override this with the PORT option.
 #
 set mailserver localhost,               # primary mailserver
-#                backup.bar.baz port 10025,  # backup mailserver on port 10025
+                smtp.google.com port 587,  # backup mailserver on port 10025
 #                localhost                   # fallback relay
 #
 #

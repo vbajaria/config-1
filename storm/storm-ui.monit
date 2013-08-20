@@ -1,6 +1,6 @@
 check process ui with pidfile /var/service/pids/ui.pid
-    start program = "/etc/init.d/storm ui start"
-    stop program = "/etc/init.d/storm ui stop"
+    start program = "/etc/init.d/storm ui start" as uid storm
+    stop program = "/etc/init.d/storm ui stop" as uid storm
     if 2 restarts within 4 cycles then timeout
-    alert premal@grepdata.com
+    alert monit@grepdata.com
 

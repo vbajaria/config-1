@@ -15,4 +15,13 @@
     <value>true</value>
   </property>
 
+  <property>
+    <name>fs.s3n.awsAccessKeyId</name>
+    <value>REPLACE_WITH_AWS_ID</value>
+  </property>
+
+  <property>
+    <name>fs.s3n.awsSecretAccessKey</name>
+    <value>REPLACE_WITH_AWS_KEY</value>
+  </property>
 </configuration>

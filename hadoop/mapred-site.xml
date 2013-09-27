@@ -23,5 +23,10 @@
     <name>mapred.child.java.opts</name>
     <value>-Xmx2048m</value>
   </property>
+
+  <property>
+    <name>mapred.local.dir</name>
+    <value>/mnt/hadoop/mapred/local</value>
+  </property>
 </configuration>
 

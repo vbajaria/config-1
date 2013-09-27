@@ -25,8 +25,8 @@
   </property>
 
   <property>
-    <name>mapred.local.dir</name>
-    <value>/mnt/hadoop/mapred/local</value>
+    <name>hadoop.tmp.dir</name>
+    <value>/mnt/hadoop/</value>
   </property>
 </configuration>
 

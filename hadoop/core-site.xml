@@ -29,4 +29,9 @@
     <name>fs.s3n.block.size</name>
     <value>16777216</value>
   </property>
+
+  <property>
+    <name>fs.s3.block.size</name>
+    <value>16777216</value>
+  </property>
 </configuration>

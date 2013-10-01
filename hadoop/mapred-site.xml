@@ -21,7 +21,7 @@
 
   <property>
     <name>mapred.child.java.opts</name>
-    <value>-Xmx2048m</value>
+    <value>-Xmx1500m</value>
   </property>
 
   <property>

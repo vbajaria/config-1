@@ -1,7 +1,8 @@
 check process api-prod-https with pidfile /var/service/pids/api-prod-https.pid
     start program = "/etc/init.d/api api-prod-https start" with timeout 45 seconds
     stop program = "/etc/init.d/api api-prod-https stop"
-    if cpu usage is greater than 60 percent for 2 cycles then alert
-    if 2 restarts within 4 cycles then timeout
-    alert alerts@grepdata.com
+    if cpu usage is greater than 50 percent for 5 cycles then alert
+    if loadavg (5min) is greater than 50 for 5 cycles then alert
+    if 5 restarts within 10 cycles then timeout
+    alert monit@grepdata.com
 

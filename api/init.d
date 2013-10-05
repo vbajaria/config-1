@@ -27,7 +27,7 @@ case "$2" in
           -Dcom.sun.management.jmxremote \
           -Djava.rmi.server.hostname=HOSTNAME"
 
-    START "java $JAVAOPTS -cp /usr/lib/api/dataapi-0.1.jar:/usr/lib/storm/storm-0.9.0-wip16.jar:/usr/lib/storm/lib/*:/usr/lib/storm/conf/ io.ntropy.dataapi.DataApiService server /usr/lib/api/$1-config.yml"
+    START "java $JAVAOPTS -cp /usr/lib/api/dataapi-0.1.jar:/usr/lib/storm/storm-0.9.0-wip16.jar:/usr/lib/storm/lib/*:/usr/lib/storm/conf/:/usr/lib/hadoop/hadoop-core-1.0.4.jar io.ntropy.dataapi.DataApiService server /usr/lib/api/$1-config.yml"
   ;;
   stop)
     STOP 

@@ -64,7 +64,7 @@
 
   <property>
     <name>hbase.coprocessor.region.classes</name>
-    <value>io.ntropy.coprocessors.GroupBy,io.ntropy.coprocessors.NewGroupBy,io.ntropy.coprocessors.MetricsCompute,io.ntropy.coprocessors.NonTransactionalMetricsCompute</value>
+    <value>io.ntropy.coprocessors.GroupBy,io.ntropy.coprocessors.NewGroupBy,io.ntropy.coprocessors.MetricsCompute,io.ntropy.coprocessors.NonTransactionalMetricsCompute,io.ntropy.coprocessors.PivotedCoProcessor</value>
   </property>
 
   <property>

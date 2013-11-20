@@ -18,16 +18,11 @@ JMXPORT=$3
 
 case "$2" in
   start)
-    JAVAOPTS="-Xmx2048m -Xms512m \
-          -XX:+UseParNewGC -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -verbose:gc -XX:+PrintGCDateStamps -XX:+PrintGCDetails -Xloggc:/var/log/api/$1-gc.log \
-          -Dcom.sun.management.jmxremote.port=$JMXPORT \
-          -Dcom.sun.management.jmxremote.ssl=false \
-          -Dcom.sun.management.jmxremote.authenticate=false \
-          -Dcom.sun.management.jmxremote.local.only=false \
-          -Dcom.sun.management.jmxremote \
-          -Djava.rmi.server.hostname=HOSTNAME"
+    JAVAOPTS="-Xmx12000m -Xms512m \
+          -agentpath:/home/ubuntu/yjp-12.0.5/bin/linux-x86-64/libyjpagent.so=disablestacktelemetry,disableexceptiontelemetry,builtinprobes=none,delay=10000,port=7092 \
+          -XX:+UseParNewGC -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -verbose:gc -XX:+PrintGCDateStamps -XX:+PrintGCDetails -Xloggc:/var/log/api/$1-gc.log"
 
-    START "java $JAVAOPTS -cp /usr/lib/api/dataapi-0.1.jar:/usr/lib/storm/storm-0.9.0-wip16.jar:/usr/lib/storm/lib/*:/usr/lib/storm/conf/:/usr/lib/hadoop/hadoop-core-1.0.4.jar io.ntropy.dataapi.DataApiService server /usr/lib/api/$1-config.yml"
+    START "java $JAVAOPTS -cp /usr/lib/api/dataapi-0.1.jar:/usr/lib/storm/storm-0.9.0-wip16.jar:/usr/lib/storm/lib/*:/usr/lib/storm/conf/:/usr/lib/hadoop/hadoop-core-1.0.4.jar:/usr/lib/hbase/hbase-0.94.9.jar io.ntropy.dataapi.DataApiService server /usr/lib/api/$1-config.yml"
   ;;
   stop)
     STOP 
